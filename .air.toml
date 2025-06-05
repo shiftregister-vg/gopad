@@ -7,7 +7,7 @@ cmd = "go build -o ./tmp/main ./cmd/server"
 bin = "tmp/main"
 full_bin = ""
 include_ext = ["go", "tpl", "tmpl", "html"]
-exclude_dir = ["web/node_modules", "web/build", "web/dist", "tmp", "vendor"]
+exclude_dir = ["web/node_modules", "web/build", "tmp", "vendor"]
 exclude_file = []
 exclude_regex = []
 follow_symlink = false
@@ -19,4 +19,8 @@ time = true
 main = "yellow"
 watcher = "cyan"
 build = "green"
-runner = "magenta" 
+runner = "magenta"
+
+[watch]
+dirs = ["cmd", "internal", "pkg", "web/build"]
+extensions = ["go", "tpl", "tmpl", "html", "js", "css", "json"] 

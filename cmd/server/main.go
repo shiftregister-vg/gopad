@@ -281,6 +281,9 @@ func (c *Client) readPump() {
 					}
 					c.doc.broadcast <- BroadcastMessage{Sender: c, Message: jsonMsg}
 				}
+			case "cursor":
+				// Broadcast cursor/selection update to all other clients
+				c.doc.broadcast <- BroadcastMessage{Sender: c, Message: message}
 			}
 		}
 	}

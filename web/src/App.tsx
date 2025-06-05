@@ -7,8 +7,9 @@ import {
   useNavigate,
   useParams
 } from 'react-router-dom';
-import MonacoEditor from '@monaco-editor/react';
+import MonacoEditor, { OnMount } from '@monaco-editor/react';
 import { useState as useReactState } from 'react';
+import * as monaco from 'monaco-editor';
 
 interface UserInfo {
   uuid: string;
@@ -39,7 +40,16 @@ interface LanguageMessage {
   language: string;
 }
 
-type WebSocketMessage = InitMessage | UpdateMessage | UserListMessage | LanguageMessage;
+interface CursorMessage {
+  type: 'cursor';
+  uuid: string;
+  name: string;
+  color: string;
+  position: number;
+  selection: { start: number; end: number };
+}
+
+type WebSocketMessage = InitMessage | UpdateMessage | UserListMessage | LanguageMessage | CursorMessage;
 
 // Monaco supported languages (common set, can be expanded)
 const MONACO_LANGUAGES = [
@@ -149,6 +159,43 @@ function loadRoomLanguage(roomId: string): string | null {
   return localStorage.getItem(getRoomLanguageKey(roomId));
 }
 
+function injectCursorStyles(uuid: string, color: string) {
+  const styleId = `remote-cursor-style-${uuid}`;
+  if (document.getElementById(styleId)) return;
+  const style = document.createElement('style');
+  style.id = styleId;
+  style.innerHTML = `
+    .monaco-editor .remote-cursor.remote-cursor-${uuid} {
+      border-left: 2px solid ${color} !important;
+      margin-left: -1px;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .monaco-editor .remote-cursor-label-${uuid} {
+      color: ${color} !important;
+      background: #23272e !important;
+      padding: 0 6px;
+      border-radius: 4px;
+      margin-left: 4px;
+      font-size: 0.85em;
+      font-weight: bold;
+      position: relative;
+      top: -1.3em;
+      left: 2px;
+      z-index: 20;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px #0008;
+      pointer-events: none;
+    }
+    .monaco-editor .remote-selection.remote-selection-${uuid} {
+      background: ${color} !important;
+      opacity: 0.18 !important;
+      border-radius: 2px !important;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 function RoomEditor() {
   const { roomId } = useParams();
   const [content, setContent] = useState('');
@@ -163,7 +210,41 @@ function RoomEditor() {
   const wsRef = useRef<WebSocket | null>(null);
   const [copied, setCopied] = useReactState(false);
   const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
-  const [lastModified, setLastModified] = useState<number>(0);
+  const [remoteCursors, setRemoteCursors] = useState<{ [uuid: string]: CursorMessage }>({});
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const decorationsRef = useRef<string[]>([]);
+
+  const handleInit = React.useCallback((data: any) => {
+    setUsers(data.users);
+    setIsInitialized(true);
+    const localLang = loadRoomLanguage(roomId!);
+    // If server's language is 'plaintext' and client has a different language, send it to server and use it
+    if (data.language === 'plaintext' && localLang && localLang !== 'plaintext') {
+      setLanguage(localLang);
+      saveRoomLanguage(roomId!, localLang);
+      setTimeout(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: 'setLanguage', language: localLang }));
+        }
+      }, 100);
+    } else if (data.language) {
+      setLanguage(data.language);
+      saveRoomLanguage(roomId!, data.language);
+    }
+    const local = loadRoomContent(roomId!);
+    const serverContentEmpty = !data.content || !data.content.trim();
+    if ((local && local.content && serverContentEmpty) || (local && local.timestamp > (data.lastModified || 0))) {
+      setContent(local.content);
+      setTimeout(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: 'update', content: local.content }));
+        }
+      }, 100);
+    } else {
+      setContent(data.content);
+      saveRoomContent(roomId!, data.content, data.lastModified || 0);
+    }
+  }, [roomId]);
 
   // Reconnect logic
   const connectWebSocket = React.useCallback(() => {
@@ -193,11 +274,13 @@ function RoomEditor() {
           setContent(data.content);
           const now = Date.now();
           saveRoomContent(roomId!, data.content, now);
-          setLastModified(now);
         } else if (data.type === 'userList') {
           setUsers(data.users);
         } else if (data.type === 'language') {
           setLanguage(data.language);
+        } else if (data.type === 'cursor') {
+          const msg = data as CursorMessage;
+          setRemoteCursors((prev) => ({ ...prev, [msg.uuid]: msg }));
         }
       } catch (e) {
         // ignore
@@ -214,7 +297,7 @@ function RoomEditor() {
       if (wsRef.current) wsRef.current.close();
       if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
     };
-  }, [connectWebSocket, showNamePrompt, userName]);
+  }, [connectWebSocket, showNamePrompt, userName, handleInit]);
 
   const handleNameSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -230,7 +313,6 @@ function RoomEditor() {
     setContent(newContent);
     const now = Date.now();
     saveRoomContent(roomId!, newContent, now);
-    setLastModified(now);
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       const message = {
         type: 'update',
@@ -258,38 +340,97 @@ function RoomEditor() {
     });
   };
 
-  const handleInit = React.useCallback((data: any) => {
-    setUsers(data.users);
-    setIsInitialized(true);
-    setLastModified(data.lastModified || 0);
-    const localLang = loadRoomLanguage(roomId!);
-    // If server's language is 'plaintext' and client has a different language, send it to server and use it
-    if (data.language === 'plaintext' && localLang && localLang !== 'plaintext') {
-      setLanguage(localLang);
-      saveRoomLanguage(roomId!, localLang);
-      setTimeout(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: 'setLanguage', language: localLang }));
-        }
-      }, 100);
-    } else if (data.language) {
-      setLanguage(data.language);
-      saveRoomLanguage(roomId!, data.language);
-    }
-    const local = loadRoomContent(roomId!);
-    const serverContentEmpty = !data.content || !data.content.trim();
-    if ((local && local.content && serverContentEmpty) || (local && local.timestamp > (data.lastModified || 0))) {
-      setContent(local.content);
-      setTimeout(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: 'update', content: local.content }));
-        }
-      }, 100);
-    } else {
-      setContent(data.content);
-      saveRoomContent(roomId!, data.content, data.lastModified || 0);
-    }
-  }, [roomId]);
+  
+
+  // Send local cursor/selection to server
+  const sendCursorUpdate = React.useCallback(() => {
+    if (!editorRef.current || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    const selection = editorRef.current.getSelection();
+    if (!selection) return;
+    const position = editorRef.current.getPosition();
+    if (!position) return;
+    const start = editorRef.current.getModel()?.getOffsetAt(selection.getStartPosition()) ?? 0;
+    const end = editorRef.current.getModel()?.getOffsetAt(selection.getEndPosition()) ?? 0;
+    wsRef.current.send(
+      JSON.stringify({
+        type: 'cursor',
+        uuid,
+        name: userName,
+        color: users[uuid]?.color || '#fff',
+        position: editorRef.current.getModel()?.getOffsetAt(position) ?? 0,
+        selection: { start, end },
+      } as CursorMessage)
+    );
+  }, [uuid, userName, users]);
+
+  // Handle remote cursor messages
+  useEffect(() => {
+    if (!editorRef.current) return;
+    const editor = editorRef.current;
+    const decorations: monaco.editor.IModelDeltaDecoration[] = [];
+    Object.values(remoteCursors).forEach((cursor) => {
+      if (cursor.uuid === uuid) return;
+      injectCursorStyles(cursor.uuid, cursor.color);
+      const model = editor.getModel();
+      if (!model) return;
+      const startPos = model.getPositionAt(cursor.selection.start);
+      const endPos = model.getPositionAt(cursor.selection.end);
+      const isSelection = cursor.selection.start !== cursor.selection.end;
+      if (isSelection) {
+        decorations.push({
+          range: new monaco.Range(
+            startPos.lineNumber,
+            startPos.column,
+            endPos.lineNumber,
+            endPos.column
+          ),
+          options: {
+            className: `remote-selection remote-selection-${cursor.uuid}`,
+            inlineClassName: `remote-selection-${cursor.uuid}`,
+            isWholeLine: false,
+            overviewRuler: {
+              color: cursor.color,
+              position: monaco.editor.OverviewRulerLane.Full,
+            },
+            minimap: { color: cursor.color, position: 1 },
+            inlineClassNameAffectsLetterSpacing: true,
+          },
+        });
+      } else {
+        decorations.push({
+          range: new monaco.Range(
+            startPos.lineNumber,
+            startPos.column,
+            startPos.lineNumber,
+            startPos.column
+          ),
+          options: {
+            className: `remote-cursor remote-cursor-${cursor.uuid}`,
+            inlineClassName: `remote-cursor-${cursor.uuid}`,
+            before: {
+              content: cursor.name,
+              inlineClassName: `remote-cursor-label remote-cursor-label-${cursor.uuid}`,
+            },
+            overviewRuler: {
+              color: cursor.color,
+              position: monaco.editor.OverviewRulerLane.Full,
+            },
+            hoverMessage: { value: cursor.name },
+          },
+        });
+      }
+    });
+    decorationsRef.current = editor.deltaDecorations(decorationsRef.current, decorations);
+  }, [remoteCursors, uuid]);
+
+  // Listen for local cursor changes
+  const handleEditorDidMount: OnMount = (editor) => {
+    editorRef.current = editor;
+    editor.onDidChangeCursorSelection(() => {
+      sendCursorUpdate();
+    });
+    sendCursorUpdate();
+  };
 
   if (showNamePrompt) {
     return (
@@ -370,6 +511,7 @@ function RoomEditor() {
             value={content}
             onChange={handleEditorChange}
             theme="vs-dark"
+            onMount={handleEditorDidMount}
             options={{
               fontSize: 15,
               minimap: { enabled: false },

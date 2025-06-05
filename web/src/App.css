@@ -218,4 +218,17 @@ textarea:disabled {
   10% { opacity: 1; }
   90% { opacity: 1; }
   100% { opacity: 0; }
+}
+
+.remote-cursor {
+  border-left: 2px solid var(--remote-cursor-color, #ff0);
+  margin-left: -1px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.remote-selection {
+  /* background-color intentionally omitted to allow per-user color via .remote-selection-<uuid> */
+  opacity: 0.25;
+  pointer-events: none;
 } 
