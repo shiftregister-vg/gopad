@@ -27,6 +27,7 @@ interface InitMessage {
 
 interface UpdateMessage {
   type: 'update';
+  tabId: string;
   content: string;
 }
 
@@ -49,7 +50,29 @@ interface CursorMessage {
   selection: { start: number; end: number };
 }
 
-type WebSocketMessage = InitMessage | UpdateMessage | UserListMessage | LanguageMessage | CursorMessage;
+interface Tab {
+  id: string;
+  name: string;
+  content: string;
+}
+
+interface TabFocusMessage {
+  type: 'tabFocus';
+  tabId: string;
+}
+
+interface TabCreateMessage {
+  type: 'tabCreate';
+  tab: { id: string; name: string; content: string };
+}
+
+interface TabRenameMessage {
+  type: 'tabRename';
+  tabId: string;
+  name: string;
+}
+
+type WebSocketMessage = InitMessage | UpdateMessage | UserListMessage | LanguageMessage | CursorMessage | TabFocusMessage | TabCreateMessage | TabRenameMessage;
 
 // Monaco supported languages (common set, can be expanded)
 const MONACO_LANGUAGES = [
@@ -196,23 +219,33 @@ function injectCursorStyles(uuid: string, color: string) {
   document.head.appendChild(style);
 }
 
+function getTabStorageKey(roomId: string, tabId: string) {
+  return `gopad-room-${roomId}-tab-${tabId}`;
+}
+
 function RoomEditor() {
   const { roomId } = useParams();
-  const [content, setContent] = useState('');
+  const [name, setName] = useState(getStoredName());
+  const [showNamePrompt, setShowNamePrompt] = useState(!name);
+  const [language, setLanguage] = useState('plaintext');
+  const [users, setUsers] = useState<{ [key: string]: UserInfo }>({});
+  const [tabs, setTabs] = useState<Tab[]>([{
+    id: '1',
+    name: 'Untitled',
+    content: '',
+  }]);
+  const [activeTabId, setActiveTabId] = useState('1');
+  const wsRef = useRef<WebSocket | null>(null);
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const decorationsRef = useRef<string[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
-  const [showNamePrompt, setShowNamePrompt] = useState(getStoredName() === '');
-  const [userName, setUserName] = useState(getStoredName());
-  const [users, setUsers] = useState<{ [uuid: string]: UserInfo }>({});
-  const [uuid] = useState(() => getOrCreateUUID());
-  const [language, setLanguage] = useState(() => loadRoomLanguage(roomId!) || 'plaintext');
   const [reconnecting, setReconnecting] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
   const [copied, setCopied] = useReactState(false);
   const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
   const [remoteCursors, setRemoteCursors] = useState<{ [uuid: string]: CursorMessage }>({});
-  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
-  const decorationsRef = useRef<string[]>([]);
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const handleInit = React.useCallback((data: any) => {
     setUsers(data.users);
@@ -234,46 +267,58 @@ function RoomEditor() {
     const local = loadRoomContent(roomId!);
     const serverContentEmpty = !data.content || !data.content.trim();
     if ((local && local.content && serverContentEmpty) || (local && local.timestamp > (data.lastModified || 0))) {
-      setContent(local.content);
+      setTabs(prevTabs => prevTabs.map(tab => 
+        tab.id === activeTabId ? { ...tab, content: local.content } : tab
+      ));
       setTimeout(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({ type: 'update', content: local.content }));
         }
       }, 100);
     } else {
-      setContent(data.content);
+      setTabs(prevTabs => prevTabs.map(tab => 
+        tab.id === activeTabId ? { ...tab, content: data.content } : tab
+      ));
       saveRoomContent(roomId!, data.content, data.lastModified || 0);
     }
   }, [roomId]);
 
   // Reconnect logic
   const connectWebSocket = React.useCallback(() => {
-    if (!roomId || !userName.trim()) return;
+    if (!roomId || !name.trim()) return;
     setReconnecting(false);
-    const ws = new WebSocket(`ws://localhost:3030/ws?doc=${roomId}`);
+    // Always use port 3030 for WebSocket in development
+    let wsHost: string;
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      wsHost = `ws://${window.location.hostname}:3030/ws?doc=${roomId}`;
+    } else {
+      wsHost = `ws://${window.location.host}/ws?doc=${roomId}`;
+    }
+    const ws = new WebSocket(wsHost);
     wsRef.current = ws;
 
     ws.onopen = () => {
+      console.log('WebSocket opened', wsHost);
       setIsConnected(true);
       setReconnecting(false);
-      ws.send(JSON.stringify({ type: 'setName', uuid, name: userName.trim() }));
+      ws.send(JSON.stringify({ type: 'setName', uuid: getOrCreateUUID(), name: name.trim() }));
     };
-    ws.onclose = () => {
-      setIsConnected(false);
-      setIsInitialized(false);
-      setReconnecting(true);
-      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
-      reconnectTimeout.current = setTimeout(connectWebSocket, 2000);
+    ws.onclose = (event) => {
+      console.log('WebSocket closed', event);
+    };
+    ws.onerror = (event) => {
+      console.log('WebSocket error', event);
     };
     ws.onmessage = (event) => {
+      console.log('WebSocket message', event.data);
       try {
         const data = JSON.parse(event.data) as WebSocketMessage;
         if (data.type === 'init') {
           handleInit(data);
         } else if (data.type === 'update') {
-          setContent(data.content);
-          const now = Date.now();
-          saveRoomContent(roomId!, data.content, now);
+          setTabs(prevTabs => prevTabs.map(tab =>
+            tab.id === data.tabId ? { ...tab, content: data.content } : tab
+          ));
         } else if (data.type === 'userList') {
           setUsers(data.users);
         } else if (data.type === 'language') {
@@ -281,53 +326,65 @@ function RoomEditor() {
         } else if (data.type === 'cursor') {
           const msg = data as CursorMessage;
           setRemoteCursors((prev) => ({ ...prev, [msg.uuid]: msg }));
+        } else if (data.type === 'tabCreate') {
+          setTabs(prevTabs => {
+            if (prevTabs.some(tab => tab.id === data.tab.id)) return prevTabs;
+            return [...prevTabs, { id: data.tab.id, name: data.tab.name, content: data.tab.content || '' }];
+          });
+          setActiveTabId(data.tab.id);
+        } else if (data.type === 'tabFocus') {
+          setActiveTabId(data.tabId);
+        } else if (data.type === 'tabRename') {
+          setTabs(prevTabs => prevTabs.map(tab =>
+            tab.id === data.tabId ? { ...tab, name: data.name } : tab
+          ));
         }
       } catch (e) {
         // ignore
       }
     };
-  }, [roomId, userName, uuid]);
+  }, [roomId, name, getOrCreateUUID]);
 
-  // Only connect when name prompt is dismissed and userName is set
+  // Only connect when name prompt is dismissed and name is set
   useEffect(() => {
-    if (!showNamePrompt && userName.trim()) {
+    if (!showNamePrompt && name.trim()) {
       connectWebSocket();
     }
     return () => {
       if (wsRef.current) wsRef.current.close();
       if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
     };
-  }, [connectWebSocket, showNamePrompt, userName, handleInit]);
+  }, [connectWebSocket, showNamePrompt, name, handleInit]);
 
   const handleNameSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (userName.trim()) {
-      setStoredName(userName.trim());
+    if (name.trim()) {
+      setStoredName(name.trim());
       setShowNamePrompt(false);
     }
   };
 
   const handleEditorChange = (value: string | undefined) => {
-    if (!isInitialized) return;
-    const newContent = value ?? '';
-    setContent(newContent);
-    const now = Date.now();
-    saveRoomContent(roomId!, newContent, now);
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const message = {
-        type: 'update',
-        content: newContent
-      };
-      wsRef.current.send(JSON.stringify(message));
-    }
+    if (!value || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    setTabs(prevTabs => prevTabs.map(tab =>
+      tab.id === activeTabId ? { ...tab, content: value } : tab
+    ));
+    wsRef.current.send(JSON.stringify({
+      type: 'update',
+      tabId: activeTabId,
+      content: value
+    }));
   };
 
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newLang = e.target.value;
-    setLanguage(newLang);
-    saveRoomLanguage(roomId!, newLang);
+    const newLanguage = e.target.value;
+    setLanguage(newLanguage);
+    localStorage.setItem(getRoomLanguageKey(roomId!), newLanguage);
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'setLanguage', language: newLang }));
+      wsRef.current.send(JSON.stringify({
+        type: 'language',
+        language: newLanguage
+      }));
     }
   };
 
@@ -339,8 +396,6 @@ function RoomEditor() {
       setTimeout(() => setCopied(false), 1500);
     });
   };
-
-  
 
   // Send local cursor/selection to server
   const sendCursorUpdate = React.useCallback(() => {
@@ -354,14 +409,14 @@ function RoomEditor() {
     wsRef.current.send(
       JSON.stringify({
         type: 'cursor',
-        uuid,
-        name: userName,
-        color: users[uuid]?.color || '#fff',
+        uuid: getOrCreateUUID(),
+        name,
+        color: users[getOrCreateUUID()]?.color || '#fff',
         position: editorRef.current.getModel()?.getOffsetAt(position) ?? 0,
         selection: { start, end },
       } as CursorMessage)
     );
-  }, [uuid, userName, users]);
+  }, [name, users, getOrCreateUUID]);
 
   // Handle remote cursor messages
   useEffect(() => {
@@ -369,7 +424,7 @@ function RoomEditor() {
     const editor = editorRef.current;
     const decorations: monaco.editor.IModelDeltaDecoration[] = [];
     Object.values(remoteCursors).forEach((cursor) => {
-      if (cursor.uuid === uuid) return;
+      if (cursor.uuid === getOrCreateUUID()) return;
       injectCursorStyles(cursor.uuid, cursor.color);
       const model = editor.getModel();
       if (!model) return;
@@ -421,7 +476,7 @@ function RoomEditor() {
       }
     });
     decorationsRef.current = editor.deltaDecorations(decorationsRef.current, decorations);
-  }, [remoteCursors, uuid]);
+  }, [remoteCursors, getOrCreateUUID]);
 
   // Listen for local cursor changes
   const handleEditorDidMount: OnMount = (editor) => {
@@ -432,6 +487,96 @@ function RoomEditor() {
     sendCursorUpdate();
   };
 
+  const createNewTab = () => {
+    const newTab: Tab = {
+      id: Date.now().toString(),
+      name: 'Untitled',
+      content: '',
+    };
+    setTabs(prevTabs => [...prevTabs, newTab]);
+    setActiveTabId(newTab.id);
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'tabCreate',
+        tab: { id: newTab.id, name: newTab.name, content: newTab.content },
+      }));
+      wsRef.current.send(JSON.stringify({
+        type: 'tabFocus',
+        tabId: newTab.id,
+      }));
+    }
+  };
+
+  const handleTabClick = (tabId: string) => {
+    setActiveTabId(tabId);
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'tabFocus',
+        tabId: tabId
+      }));
+    }
+  };
+
+  const handleTabClose = (tabId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (tabs.length === 1) return; // Don't close the last tab
+    
+    setTabs(prevTabs => prevTabs.filter(tab => tab.id !== tabId));
+    if (activeTabId === tabId) {
+      const remainingTabs = tabs.filter(tab => tab.id !== tabId);
+      setActiveTabId(remainingTabs[remainingTabs.length - 1].id);
+    }
+  };
+
+  const handleTabDoubleClick = (tabId: string, currentName: string) => {
+    setRenamingTabId(tabId);
+    setRenameValue(currentName);
+  };
+
+  const handleRenameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setRenameValue(e.target.value);
+  };
+
+  const handleRenameBlurOrEnter = (tabId: string) => {
+    if (renameValue.trim() && wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'tabRename',
+        tabId,
+        name: renameValue.trim(),
+      }));
+    }
+    setRenamingTabId(null);
+  };
+
+  // Restore tab content from localStorage on mount or tab switch
+  useEffect(() => {
+    if (!roomId) return;
+    const tab = tabs.find(tab => tab.id === activeTabId);
+    if (!tab) return;
+    const saved = localStorage.getItem(getTabStorageKey(roomId, activeTabId));
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setTabs(prevTabs => prevTabs.map(t => t.id === activeTabId ? { ...t, content: parsed.content } : t));
+      } catch {}
+    }
+  }, [roomId, activeTabId]);
+
+  // Save tab content to localStorage on change
+  useEffect(() => {
+    if (!roomId) return;
+    const tab = tabs.find(tab => tab.id === activeTabId);
+    if (!tab) return;
+    localStorage.setItem(getTabStorageKey(roomId, activeTabId), JSON.stringify({ content: tab.content }));
+  }, [roomId, activeTabId, tabs]);
+
+  // On mount, restore language from localStorage if available
+  useEffect(() => {
+    if (!roomId) return;
+    const savedLang = loadRoomLanguage(roomId);
+    if (savedLang) setLanguage(savedLang);
+  }, [roomId]);
+
   if (showNamePrompt) {
     return (
       <div className="name-prompt">
@@ -439,8 +584,8 @@ function RoomEditor() {
           <h2>Enter your name</h2>
           <input
             type="text"
-            value={userName}
-            onChange={(e) => setUserName(e.target.value)}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             placeholder="Your name"
             required
             autoFocus
@@ -505,19 +650,60 @@ function RoomEditor() {
           </ul>
         </div>
         <div className="editor-container">
+          <div className="editor-header">
+            <div className="tab-bar">
+              {tabs.map(tab => (
+                <div
+                  key={tab.id}
+                  className={`tab ${tab.id === activeTabId ? 'active' : ''}`}
+                  onClick={() => handleTabClick(tab.id)}
+                >
+                  {renamingTabId === tab.id ? (
+                    <input
+                      type="text"
+                      value={renameValue}
+                      autoFocus
+                      onChange={handleRenameChange}
+                      onBlur={() => handleRenameBlurOrEnter(tab.id)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') handleRenameBlurOrEnter(tab.id);
+                      }}
+                      style={{ width: '90px', fontSize: 'inherit', background: '#23272e', color: '#e0e0e0', border: '1px solid #444', borderRadius: 3, padding: '2px 6px' }}
+                    />
+                  ) : (
+                    <span onDoubleClick={() => handleTabDoubleClick(tab.id, tab.name)}>{tab.name}</span>
+                  )}
+                  <button
+                    className="tab-close"
+                    onClick={(e) => handleTabClose(tab.id, e)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button className="new-tab-button" onClick={createNewTab}>
+                +
+              </button>
+            </div>
+            <div className="editor-controls">
+              {/* Removed Copy Room URL button from here */}
+            </div>
+          </div>
           <MonacoEditor
-            height="80vh"
+            height="calc(100vh - 100px)"
             language={language}
-            value={content}
+            value={tabs.find(tab => tab.id === activeTabId)?.content || ''}
             onChange={handleEditorChange}
-            theme="vs-dark"
             onMount={handleEditorDidMount}
+            theme="vs-dark"
             options={{
-              fontSize: 15,
               minimap: { enabled: false },
+              fontSize: 14,
               wordWrap: 'on',
-              scrollBeyondLastLine: false,
               lineNumbers: 'on',
+              renderWhitespace: 'selection',
+              scrollBeyondLastLine: false,
+              automaticLayout: true,
             }}
           />
         </div>

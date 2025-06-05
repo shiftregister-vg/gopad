@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,6 +46,7 @@ type Document struct {
 	unregister   chan *Client
 	lastModified int64 // unix timestamp (ms)
 	mu           sync.RWMutex
+	// TODO: add tab support
 }
 
 type Client struct {
@@ -75,10 +78,51 @@ var (
 func main() {
 	r := gin.Default()
 
-	// Serve static files
-	r.Static("/static", "./web/dist/static")
-	r.StaticFile("/", "./web/dist/index.html")
-	r.StaticFile("/index.html", "./web/dist/index.html")
+	// Check if we're in development mode
+	isDev := os.Getenv("GO_ENV") == "development"
+
+	if isDev {
+		// In development, proxy all non-WebSocket requests to the React dev server
+		r.Use(func(c *gin.Context) {
+			if strings.ToLower(c.Request.Header.Get("Upgrade")) == "websocket" || c.Request.URL.Path == "/ws" {
+				if c.Request.URL.Path == "/ws" {
+					log.Println("WebSocket request correctly handled by backend:", c.Request.URL.Path)
+				}
+				c.Next()
+				return
+			}
+			log.Println("Proxying request to React dev server:", c.Request.URL.Path)
+			// Proxy to React dev server
+			proxy := &http.Client{
+				Timeout: 10 * time.Second,
+			}
+			req, err := http.NewRequest(c.Request.Method, "http://localhost:3000"+c.Request.URL.Path, c.Request.Body)
+			if err != nil {
+				c.AbortWithError(http.StatusInternalServerError, err)
+				return
+			}
+			req.Header = c.Request.Header
+			resp, err := proxy.Do(req)
+			if err != nil {
+				c.AbortWithError(http.StatusInternalServerError, err)
+				return
+			}
+			defer resp.Body.Close()
+
+			// Copy response headers
+			for k, v := range resp.Header {
+				c.Writer.Header()[k] = v
+			}
+			c.Writer.WriteHeader(resp.StatusCode)
+			c.Writer.Write([]byte{}) // Flush headers
+			c.Writer.Flush()
+		})
+	} else {
+		// In production, serve static files
+		r.Static("/static", "./web/dist/static")
+		r.StaticFile("/", "./web/dist/index.html")
+		r.StaticFile("/index.html", "./web/dist/index.html")
+	}
 
 	// Debug endpoint to check document state
 	r.GET("/debug/doc/:id", func(c *gin.Context) {
@@ -104,10 +148,12 @@ func main() {
 	// WebSocket endpoint
 	r.GET("/ws", handleWebSocket)
 
-	// SPA fallback: serve index.html for all other routes
-	r.NoRoute(func(c *gin.Context) {
-		c.File("./web/dist/index.html")
-	})
+	// SPA fallback: serve index.html for all other routes (only in production)
+	if !isDev {
+		r.NoRoute(func(c *gin.Context) {
+			c.File("./web/dist/index.html")
+		})
+	}
 
 	// Start the server
 	log.Fatal(r.Run(":3030"))
@@ -201,9 +247,7 @@ func (c *Client) readPump() {
 	for {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
-			}
+			log.Printf("WebSocket read error for doc %s: %v", c.docID, err)
 			break
 		}
 		log.Printf("Received message from client: %s", string(message))
@@ -262,28 +306,98 @@ func (c *Client) readPump() {
 					}
 					c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
 				}
-			case "update":
-				if content, ok := jsonMsg["content"].(string); ok {
-					// Update document content
+			case "language":
+				if lang, ok := jsonMsg["language"].(string); ok {
 					c.doc.mu.Lock()
-					c.doc.Content = content
-					c.doc.lastModified = time.Now().UnixMilli()
+					c.doc.Language = lang
 					c.doc.mu.Unlock()
-					// Create a properly formatted message for broadcasting
-					broadcastMsg := map[string]interface{}{
-						"type":    "update",
-						"content": content,
+					langMsg := map[string]interface{}{
+						"type":     "language",
+						"language": lang,
 					}
-					jsonMsg, err := json.Marshal(broadcastMsg)
+					jsonMsg, err := json.Marshal(langMsg)
 					if err != nil {
-						log.Printf("Error marshaling broadcast message: %v", err)
+						log.Printf("Error marshaling language message: %v", err)
 						continue
 					}
-					c.doc.broadcast <- BroadcastMessage{Sender: c, Message: jsonMsg}
+					c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+				}
+			case "update":
+				if tabId, ok := jsonMsg["tabId"].(string); ok {
+					if content, ok := jsonMsg["content"].(string); ok {
+						broadcastMsg := map[string]interface{}{
+							"type":    "update",
+							"tabId":   tabId,
+							"content": content,
+						}
+						jsonMsg, err := json.Marshal(broadcastMsg)
+						if err != nil {
+							log.Printf("Error marshaling broadcast message: %v", err)
+							continue
+						}
+						c.doc.broadcast <- BroadcastMessage{Sender: c, Message: jsonMsg}
+					}
 				}
 			case "cursor":
 				// Broadcast cursor/selection update to all other clients
 				c.doc.broadcast <- BroadcastMessage{Sender: c, Message: message}
+			case "tabCreate":
+				if tab, ok := jsonMsg["tab"].(map[string]interface{}); ok {
+					msg := map[string]interface{}{
+						"type": "tabCreate",
+						"tab": map[string]interface{}{
+							"id":      tab["id"],
+							"name":    tab["name"],
+							"content": tab["content"],
+						},
+					}
+					jsonMsg, err := json.Marshal(msg)
+					if err != nil {
+						log.Printf("Error marshaling tabCreate message: %v", err)
+						continue
+					}
+					c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+					// Also broadcast tabFocus for the new tab
+					if tabId, ok := tab["id"].(string); ok {
+						focusMsg := map[string]interface{}{
+							"type":  "tabFocus",
+							"tabId": tabId,
+						}
+						focusJson, err := json.Marshal(focusMsg)
+						if err == nil {
+							c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: focusJson}
+						}
+					}
+				}
+			case "tabFocus":
+				if tabId, ok := jsonMsg["tabId"].(string); ok {
+					msg := map[string]interface{}{
+						"type":  "tabFocus",
+						"tabId": tabId,
+					}
+					jsonMsg, err := json.Marshal(msg)
+					if err != nil {
+						log.Printf("Error marshaling tabFocus message: %v", err)
+						continue
+					}
+					c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+				}
+			case "tabRename":
+				if tabId, ok := jsonMsg["tabId"].(string); ok {
+					if name, ok := jsonMsg["name"].(string); ok {
+						msg := map[string]interface{}{
+							"type":  "tabRename",
+							"tabId": tabId,
+							"name":  name,
+						}
+						jsonMsg, err := json.Marshal(msg)
+						if err != nil {
+							log.Printf("Error marshaling tabRename message: %v", err)
+							continue
+						}
+						c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+					}
+				}
 			}
 		}
 	}
@@ -294,18 +408,17 @@ func (c *Client) writePump() {
 		c.conn.Close()
 	}()
 	for message := range c.send {
-		log.Printf("Broadcasting message to client: %s", string(message))
 		w, err := c.conn.NextWriter(websocket.TextMessage)
 		if err != nil {
-			log.Printf("Error getting next writer: %v", err)
+			log.Printf("WebSocket write error for doc %s: %v", c.docID, err)
 			return
 		}
 		if _, err := w.Write(message); err != nil {
-			log.Printf("Error writing message: %v", err)
+			log.Printf("WebSocket write error for doc %s: %v", c.docID, err)
 			return
 		}
 		if err := w.Close(); err != nil {
-			log.Printf("Error closing writer: %v", err)
+			log.Printf("WebSocket write error for doc %s: %v", c.docID, err)
 			return
 		}
 	}

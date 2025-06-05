@@ -231,4 +231,145 @@ textarea:disabled {
   /* background-color intentionally omitted to allow per-user color via .remote-selection-<uuid> */
   opacity: 0.25;
   pointer-events: none;
+}
+
+.editor-header {
+  background: #23272e;
+  border-bottom: 1px solid #333;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tab-bar {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: #444 #23272e;
+}
+
+.tab-bar::-webkit-scrollbar {
+  height: 6px;
+}
+
+.tab-bar::-webkit-scrollbar-track {
+  background: #23272e;
+}
+
+.tab-bar::-webkit-scrollbar-thumb {
+  background-color: #444;
+  border-radius: 3px;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #2d2d2d;
+  border: 1px solid #444;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+  user-select: none;
+  min-width: 120px;
+  max-width: 200px;
+  color: #e0e0e0;
+  transition: background-color 0.2s;
+}
+
+.tab:hover {
+  background: #363636;
+}
+
+.tab.active {
+  background: #23272e;
+  border-bottom: 1px solid #23272e;
+  margin-bottom: -1px;
+}
+
+.tab span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #e0e0e0;
+}
+
+.tab-close {
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 3px;
+  transition: all 0.2s;
+}
+
+.tab-close:hover {
+  background: #444;
+  color: #e0e0e0;
+}
+
+.new-tab-button {
+  background: #2d2d2d;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #888;
+  cursor: pointer;
+  padding: 6px 12px;
+  font-size: 16px;
+  line-height: 1;
+  margin-left: 4px;
+  transition: all 0.2s;
+}
+
+.new-tab-button:hover {
+  background: #363636;
+  color: #e0e0e0;
+  border-color: #555;
+}
+
+.editor-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.editor-controls select {
+  background: #2d2d2d;
+  border: 1px solid #444;
+  color: #e0e0e0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.editor-controls select:hover {
+  border-color: #555;
+}
+
+.editor-controls select:focus {
+  border-color: #61dafb;
+  outline: none;
+}
+
+.editor-controls button {
+  background: #2d2d2d;
+  border: 1px solid #444;
+  color: #e0e0e0;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.editor-controls button:hover {
+  background: #363636;
+  border-color: #555;
 } 
