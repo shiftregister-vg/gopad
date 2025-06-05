@@ -1,4 +1,4 @@
-.PHONY: build-frontend start clean
+.PHONY: build-frontend start clean dev deps
 
 # Build the frontend and copy to dist
 build-frontend:
@@ -8,10 +8,13 @@ build-frontend:
 	mkdir -p web/dist
 	cp -r web/build/* web/dist/
 
-# Start the server
-start: build-frontend
-	@echo "Starting server..."
-	go run cmd/server/main.go
+# Start the server with hot reload and frontend build watch
+start:
+	@echo "If you don't have 'air' installed, run: go install github.com/cosmtrek/air@latest"
+	# Start frontend build in watch mode (background)
+	cd web && npm run build -- --watch &
+	# Start Go server with air (auto-reloads on changes)
+	air
 
 # Clean build artifacts
 clean:
