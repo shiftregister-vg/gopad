@@ -290,28 +290,20 @@ func (c *Client) writePump() {
 	defer func() {
 		c.conn.Close()
 	}()
-	for {
-		select {
-		case message, ok := <-c.send:
-			if !ok {
-				log.Printf("Send channel closed, closing WebSocket for client %s", c.uuid)
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
-			log.Printf("Broadcasting message to client: %s", string(message))
-			w, err := c.conn.NextWriter(websocket.TextMessage)
-			if err != nil {
-				log.Printf("Error getting next writer: %v", err)
-				return
-			}
-			if _, err := w.Write(message); err != nil {
-				log.Printf("Error writing message: %v", err)
-				return
-			}
-			if err := w.Close(); err != nil {
-				log.Printf("Error closing writer: %v", err)
-				return
-			}
+	for message := range c.send {
+		log.Printf("Broadcasting message to client: %s", string(message))
+		w, err := c.conn.NextWriter(websocket.TextMessage)
+		if err != nil {
+			log.Printf("Error getting next writer: %v", err)
+			return
+		}
+		if _, err := w.Write(message); err != nil {
+			log.Printf("Error writing message: %v", err)
+			return
+		}
+		if err := w.Close(); err != nil {
+			log.Printf("Error closing writer: %v", err)
+			return
 		}
 	}
 }
