@@ -293,6 +293,7 @@ function RoomEditor() {
   const [showNamePrompt, setShowNamePrompt] = useState(!name);
   const [language, setLanguage] = useState('plaintext');
   const [users, setUsers] = useState<{ [key: string]: UserInfo }>({});
+  const [currentUserUuid, setCurrentUserUuid] = useState(getOrCreateUUID());
   const [tabs, setTabs] = useState<Tab[]>([{
     id: '1',
     name: 'Untitled',
@@ -347,7 +348,9 @@ function RoomEditor() {
       setIsConnected(true);
       setReconnecting(false);
       if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
-      ws.send(JSON.stringify({ type: 'setName', uuid: getOrCreateUUID(), name: name.trim() }));
+      const uuid = getOrCreateUUID();
+      setCurrentUserUuid(uuid);
+      ws.send(JSON.stringify({ type: 'setName', uuid, name: name.trim() }));
     };
 
     ws.onclose = (event) => {
@@ -675,6 +678,7 @@ function RoomEditor() {
             <ul>
               {Object.entries(users || {}).map(([uuid, user]) => {
                 const isDisconnected = user.disconnected;
+                const isCurrentUser = uuid === currentUserUuid;
                 return (
                   <li
                     key={uuid}
@@ -685,6 +689,7 @@ function RoomEditor() {
                     }}
                   >
                     {user.name}
+                    {isCurrentUser && <span style={{ color: '#e0e0e0', marginLeft: 6, fontSize: '0.9em' }}>(me)</span>}
                     {isDisconnected && <span style={{ color: '#bdbdbd', marginLeft: 6 }}>(disconnected)</span>}
                   </li>
                 );
