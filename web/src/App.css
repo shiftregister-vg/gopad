@@ -643,6 +643,7 @@ textarea:disabled {
   flex-direction: column;
   min-width: 0;
   height: 100%;
+  position: relative;
 }
 
 .notes-panel {
@@ -654,7 +655,8 @@ textarea:disabled {
   position: relative;
   display: flex;
   flex-direction: column;
-  z-index: 2;
+  z-index: 20;
+  overflow: visible;
 }
 
 .notes-panel.closed {
@@ -664,23 +666,43 @@ textarea:disabled {
   overflow: hidden;
 }
 
+.editor-notes-row {
+  display: flex;
+  flex-direction: row;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  position: relative;
+  overflow: visible;
+}
+
 .notes-panel-toggle {
-  position: static;
-  margin-left: 10px;
-  width: 28px;
-  height: 28px;
-  background: #1e1e1e;
-  border: 2px solid #333;
-  border-radius: 6px;
-  color: #61dafb;
+  position: absolute;
+  right: -14px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  z-index: 100;
   cursor: pointer;
-  z-index: 3;
-  font-size: 1.2rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
-  transition: background 0.2s, border-color 0.2s;
+  width: 28px;
+  height: 36px;
+  transition: background 0.2s;
+}
+
+.notes-panel-toggle svg {
+  display: block;
+  color: #d0d0d0;
+  transition: color 0.2s;
+}
+
+.notes-panel-toggle:hover svg path {
+  stroke: #40a9ff;
 }
 
 .notes-panel-header {
@@ -746,14 +768,6 @@ textarea:disabled {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: 100%;
-}
-
-.editor-notes-row {
-  display: flex;
-  flex-direction: row;
-  flex: 1 1 auto;
-  min-height: 0;
   height: 100%;
 }
 

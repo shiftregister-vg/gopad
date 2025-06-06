@@ -308,6 +308,7 @@ function RoomEditor() {
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [notesPanelOpen, setNotesPanelOpen] = useState(true);
+  const centerPanelRef = useRef<HTMLDivElement>(null);
 
   const handleInit = (data: FullStateMessage) => {
     if (data.tabs && Array.isArray(data.tabs)) {
@@ -568,6 +569,14 @@ function RoomEditor() {
     }
   }, [activeTabId, tabs]);
 
+  useEffect(() => {
+    setTimeout(() => {
+      if (editorRef.current) {
+        editorRef.current.layout();
+      }
+    }, 50);
+  }, [notesPanelOpen]);
+
   if (showNamePrompt) {
     return (
       <div className="name-prompt">
@@ -709,7 +718,7 @@ function RoomEditor() {
             </div>
           </div>
           <div className="editor-notes-row">
-            <div className="center-panel">
+            <div className="center-panel" ref={centerPanelRef} style={{ position: 'relative', height: '100%' }}>
               <MonacoEditor
                 height="calc(100vh - 100px)"
                 language={language}
@@ -729,6 +738,21 @@ function RoomEditor() {
                   trimAutoWhitespace: false,
                 }}
               />
+              <button
+                className="notes-panel-toggle"
+                onClick={() => setNotesPanelOpen(open => !open)}
+                title={notesPanelOpen ? 'Collapse Notes Panel' : 'Expand Notes Panel'}
+              >
+                {notesPanelOpen ? (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M10 6L16 12L10 18" stroke="#d0d0d0" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                ) : (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M14 6L8 12L14 18" stroke="#d0d0d0" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                )}
+              </button>
             </div>
             <div className={`notes-panel${notesPanelOpen ? ' open' : ' closed'}`}> 
               {notesPanelOpen && (
@@ -750,9 +774,6 @@ function RoomEditor() {
                           Edit
                         </button>
                       )}
-                      <button className="notes-panel-toggle" onClick={() => setNotesPanelOpen(open => !open)}>
-                        {notesPanelOpen ? '→' : '←'}
-                      </button>
                     </div>
                   </div>
                   <div className="tab-notes">
@@ -764,13 +785,6 @@ function RoomEditor() {
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
-              {!notesPanelOpen && (
-                <div className="notes-panel-collapsed">
-                  <button className="notes-panel-toggle" onClick={() => setNotesPanelOpen(open => !open)}>
-                    ←
-                  </button>
                 </div>
               )}
             </div>
