@@ -91,6 +91,15 @@ html, body {
   box-shadow: 0 0 4px #e57373;
 }
 
+@keyframes spin-slow {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(-360deg); }
+}
+
+.connection-status.reconnecting svg {
+  animation: spin-slow 1.5s linear infinite;
+}
+
 main {
   flex: 1;
   display: flex;
