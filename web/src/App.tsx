@@ -869,10 +869,8 @@ function RoomEditor() {
                   </svg>
                 )}
               </div>
-            </div>
-            <div className="footer-right">
               <span className="room-id" onClick={handleCopyRoomUrl}>
-                Room: {roomId}
+                room: {roomId}
                 {copied && <span className="copy-tooltip">Copied!</span>}
               </span>
             </div>
