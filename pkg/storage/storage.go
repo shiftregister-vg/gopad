@@ -17,6 +17,14 @@ type DocumentState struct {
 	LastModified int64             `json:"lastModified"`
 	Users        map[string]string `json:"users"`   // uuid -> name
 	Version      int64             `json:"version"` // Added for conflict detection
+	Tabs         []Tab             `json:"tabs"`    // Added for tab support
+	ActiveTabId  string            `json:"activeTabId"`
+}
+
+type Tab struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Content string `json:"content"`
 }
 
 // Storage handles persistent document state using Redis

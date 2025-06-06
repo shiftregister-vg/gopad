@@ -122,13 +122,21 @@ interface TabRenameMessage {
 }
 
 interface FullStateMessage {
-  type: 'fullState';
+  type: 'fullState' | 'init';
   tabs: Tab[];
   activeTabId: string;
   language: string;
+  users: { [key: string]: UserInfo };
+  lastModified: number;
 }
 
-type WebSocketMessage = UpdateMessage | UserListMessage | LanguageMessage | CursorMessage | TabFocusMessage | TabCreateMessage | TabRenameMessage | FullStateMessage;
+interface TabUpdateMessage {
+  type: 'tabUpdate';
+  tabs: Tab[];
+  activeTabId: string;
+}
+
+type WebSocketMessage = UpdateMessage | UserListMessage | LanguageMessage | CursorMessage | TabFocusMessage | TabCreateMessage | TabRenameMessage | FullStateMessage | TabUpdateMessage;
 
 function generateRoomId() {
   return Math.random().toString(36).substring(2, 10);
@@ -274,7 +282,12 @@ function RoomEditor() {
       setTabs(data.tabs);
       setActiveTabId(data.activeTabId || data.tabs[0]?.id || '1');
     }
-    setLanguage(data.language || 'plaintext');
+    if (data.language) {
+      setLanguage(data.language);
+    }
+    if (data.users) {
+      setUsers(data.users);
+    }
     setIsInitialized(true);
   };
 
@@ -353,6 +366,11 @@ function RoomEditor() {
               setTabs(prevTabs => prevTabs.map(tab =>
                 tab.id === (data as TabRenameMessage).tabId ? { ...tab, name: (data as TabRenameMessage).name } : tab
               ));
+              break;
+            case 'tabUpdate':
+              const updateData = data as TabUpdateMessage;
+              setTabs(updateData.tabs);
+              setActiveTabId(updateData.activeTabId);
               break;
           }
         }

@@ -49,7 +49,14 @@ type Document struct {
 	mu           sync.RWMutex
 	// Peer recovery additions:
 	waitingForState []*Client // clients waiting for state
-	// TODO: add tab support
+	Tabs            []Tab
+	ActiveTabId     string
+}
+
+type Tab struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Content string `json:"content"`
 }
 
 type Client struct {
@@ -175,6 +182,20 @@ func main() {
 	log.Fatal(r.Run(":3030"))
 }
 
+// ensureMinimumTabs ensures there is always at least one tab in the document
+func (doc *Document) ensureMinimumTabs() {
+	if len(doc.Tabs) == 0 {
+		doc.Tabs = []Tab{
+			{
+				ID:      "1",
+				Name:    "Untitled",
+				Content: "",
+			},
+		}
+		doc.ActiveTabId = "1"
+	}
+}
+
 func getOrCreateDocument(docID string) *Document {
 	doc, exists := documents[docID]
 	if !exists {
@@ -188,6 +209,14 @@ func getOrCreateDocument(docID string) *Document {
 				LastModified: time.Now().UnixMilli(),
 				Users:        make(map[string]string),
 				Version:      0,
+				Tabs: []storage.Tab{
+					{
+						ID:      "1",
+						Name:    "Untitled",
+						Content: "",
+					},
+				},
+				ActiveTabId: "1",
 			}
 		}
 
@@ -201,7 +230,18 @@ func getOrCreateDocument(docID string) *Document {
 			register:     make(chan *Client),
 			unregister:   make(chan *Client),
 			lastModified: state.LastModified,
+			Tabs:         make([]Tab, len(state.Tabs)),
+			ActiveTabId:  state.ActiveTabId,
 		}
+		// Convert storage.Tabs to Document.Tabs
+		for i, t := range state.Tabs {
+			doc.Tabs[i] = Tab{
+				ID:      t.ID,
+				Name:    t.Name,
+				Content: t.Content,
+			}
+		}
+		doc.ensureMinimumTabs() // Ensure minimum tabs after loading
 		documents[docID] = doc
 		go doc.broadcastMessages()
 
@@ -214,6 +254,17 @@ func getOrCreateDocument(docID string) *Document {
 					doc.Content = update.Content
 					doc.Language = update.Language
 					doc.lastModified = update.LastModified
+					doc.ActiveTabId = update.ActiveTabId
+
+					// Update tabs
+					doc.Tabs = make([]Tab, len(update.Tabs))
+					for i, t := range update.Tabs {
+						doc.Tabs[i] = Tab{
+							ID:      t.ID,
+							Name:    t.Name,
+							Content: t.Content,
+						}
+					}
 
 					// Update users
 					for uuid, name := range update.Users {
@@ -226,7 +277,8 @@ func getOrCreateDocument(docID string) *Document {
 					// Broadcast update to all clients
 					updateMsg := map[string]interface{}{
 						"type":         "update",
-						"content":      update.Content,
+						"tabs":         doc.Tabs,
+						"activeTabId":  doc.ActiveTabId,
 						"language":     update.Language,
 						"lastModified": update.LastModified,
 					}
@@ -280,13 +332,14 @@ func handleWebSocket(c *gin.Context) {
 		// Send initial document state to the new client
 		initialState := map[string]interface{}{
 			"type":         "init",
-			"content":      doc.Content,
-			"users":        doc.Users,
+			"tabs":         doc.Tabs,
+			"activeTabId":  doc.ActiveTabId,
 			"language":     doc.Language,
+			"users":        doc.Users,
 			"lastModified": doc.lastModified,
 		}
 		doc.mu.Unlock()
-		log.Printf("Sending initial state to client: %s", doc.Content)
+		log.Printf("Sending initial state to client: %+v", initialState)
 		if err := conn.WriteJSON(initialState); err != nil {
 			log.Printf("error sending initial state: %v", err)
 			conn.Close()
@@ -411,6 +464,16 @@ func (c *Client) readPump() {
 			case "update":
 				if tabId, ok := jsonMsg["tabId"].(string); ok {
 					if content, ok := jsonMsg["content"].(string); ok {
+						c.doc.mu.Lock()
+						// Update the tab content
+						for i, tab := range c.doc.Tabs {
+							if tab.ID == tabId {
+								c.doc.Tabs[i].Content = content
+								break
+							}
+						}
+						c.doc.mu.Unlock()
+
 						broadcastMsg := map[string]interface{}{
 							"type":    "update",
 							"tabId":   tabId,
@@ -422,6 +485,11 @@ func (c *Client) readPump() {
 							continue
 						}
 						c.doc.broadcast <- BroadcastMessage{Sender: c, Message: jsonMsg}
+
+						// Save state after update
+						if err := c.doc.saveState(); err != nil {
+							log.Printf("Error saving document state: %v", err)
+						}
 					}
 				}
 			case "cursor":
@@ -429,13 +497,18 @@ func (c *Client) readPump() {
 				c.doc.broadcast <- BroadcastMessage{Sender: c, Message: message}
 			case "tabCreate":
 				if tab, ok := jsonMsg["tab"].(map[string]interface{}); ok {
+					c.doc.mu.Lock()
+					newTab := Tab{
+						ID:      tab["id"].(string),
+						Name:    tab["name"].(string),
+						Content: tab["content"].(string),
+					}
+					c.doc.Tabs = append(c.doc.Tabs, newTab)
+					c.doc.mu.Unlock()
+
 					msg := map[string]interface{}{
 						"type": "tabCreate",
-						"tab": map[string]interface{}{
-							"id":      tab["id"],
-							"name":    tab["name"],
-							"content": tab["content"],
-						},
+						"tab":  newTab,
 					}
 					jsonMsg, err := json.Marshal(msg)
 					if err != nil {
@@ -443,20 +516,63 @@ func (c *Client) readPump() {
 						continue
 					}
 					c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+
 					// Also broadcast tabFocus for the new tab
-					if tabId, ok := tab["id"].(string); ok {
-						focusMsg := map[string]interface{}{
-							"type":  "tabFocus",
-							"tabId": tabId,
+					focusMsg := map[string]interface{}{
+						"type":  "tabFocus",
+						"tabId": newTab.ID,
+					}
+					focusJson, err := json.Marshal(focusMsg)
+					if err == nil {
+						c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: focusJson}
+					}
+
+					// Save state after creating tab
+					if err := c.doc.saveState(); err != nil {
+						log.Printf("Error saving document state: %v", err)
+					}
+				}
+			case "tabDelete":
+				if tabId, ok := jsonMsg["tabId"].(string); ok {
+					c.doc.mu.Lock()
+					// Find and remove the tab
+					for i, tab := range c.doc.Tabs {
+						if tab.ID == tabId {
+							c.doc.Tabs = append(c.doc.Tabs[:i], c.doc.Tabs[i+1:]...)
+							break
 						}
-						focusJson, err := json.Marshal(focusMsg)
-						if err == nil {
-							c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: focusJson}
+					}
+					// If we deleted the active tab, set active tab to the first tab
+					if c.doc.ActiveTabId == tabId {
+						if len(c.doc.Tabs) > 0 {
+							c.doc.ActiveTabId = c.doc.Tabs[0].ID
 						}
+					}
+					c.doc.ensureMinimumTabs() // Ensure we still have at least one tab
+					c.doc.mu.Unlock()
+
+					// Broadcast the updated tab list and active tab
+					updateMsg := map[string]interface{}{
+						"type":        "tabUpdate",
+						"tabs":        c.doc.Tabs,
+						"activeTabId": c.doc.ActiveTabId,
+					}
+					jsonMsg, err := json.Marshal(updateMsg)
+					if err == nil {
+						c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+					}
+
+					// Save state after deleting tab
+					if err := c.doc.saveState(); err != nil {
+						log.Printf("Error saving document state: %v", err)
 					}
 				}
 			case "tabFocus":
 				if tabId, ok := jsonMsg["tabId"].(string); ok {
+					c.doc.mu.Lock()
+					c.doc.ActiveTabId = tabId
+					c.doc.mu.Unlock()
+
 					msg := map[string]interface{}{
 						"type":  "tabFocus",
 						"tabId": tabId,
@@ -467,21 +583,42 @@ func (c *Client) readPump() {
 						continue
 					}
 					c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+
+					// Save state after changing active tab
+					if err := c.doc.saveState(); err != nil {
+						log.Printf("Error saving document state: %v", err)
+					}
 				}
 			case "tabRename":
 				if tabId, ok := jsonMsg["tabId"].(string); ok {
 					if name, ok := jsonMsg["name"].(string); ok {
-						msg := map[string]interface{}{
-							"type":  "tabRename",
-							"tabId": tabId,
-							"name":  name,
+						c.doc.mu.Lock()
+						// Update the tab name
+						for i, tab := range c.doc.Tabs {
+							if tab.ID == tabId {
+								c.doc.Tabs[i].Name = name
+								break
+							}
 						}
-						jsonMsg, err := json.Marshal(msg)
+						c.doc.mu.Unlock()
+
+						// Send a tabUpdate message with the complete tab state
+						updateMsg := map[string]interface{}{
+							"type":        "tabUpdate",
+							"tabs":        c.doc.Tabs,
+							"activeTabId": c.doc.ActiveTabId,
+						}
+						jsonMsg, err := json.Marshal(updateMsg)
 						if err != nil {
-							log.Printf("Error marshaling tabRename message: %v", err)
+							log.Printf("Error marshaling tabUpdate message: %v", err)
 							continue
 						}
 						c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+
+						// Save state after renaming tab
+						if err := c.doc.saveState(); err != nil {
+							log.Printf("Error saving document state: %v", err)
+						}
 					}
 				}
 			case "requestState":
@@ -546,9 +683,11 @@ func (doc *Document) broadcastMessages() {
 			initialState := map[string]interface{}{
 				"type":         "init",
 				"content":      doc.Content,
-				"users":        doc.Users,
+				"tabs":         doc.Tabs,
+				"activeTabId":  doc.ActiveTabId,
 				"language":     doc.Language,
 				"lastModified": doc.lastModified,
+				"users":        doc.Users,
 			}
 			doc.mu.RUnlock()
 			client.conn.WriteJSON(initialState)
@@ -625,11 +764,21 @@ func (doc *Document) saveState() error {
 		Language:     doc.Language,
 		LastModified: doc.lastModified,
 		Users:        make(map[string]string),
+		Tabs:         make([]storage.Tab, len(doc.Tabs)),
+		ActiveTabId:  doc.ActiveTabId,
 	}
 
 	doc.mu.RLock()
 	for uuid, client := range doc.Users {
 		state.Users[uuid] = client.name
+	}
+	// Convert Document.Tabs to storage.Tabs
+	for i, t := range doc.Tabs {
+		state.Tabs[i] = storage.Tab{
+			ID:      t.ID,
+			Name:    t.Name,
+			Content: t.Content,
+		}
 	}
 	doc.mu.RUnlock()
 
