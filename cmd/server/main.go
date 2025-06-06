@@ -247,10 +247,16 @@ func (c *Client) readPump() {
 		go func(client *Client) {
 			time.Sleep(2 * time.Minute)
 			client.doc.mu.Lock()
+			// Only remove if still disconnected and no reconnection has occurred
 			if client.disconnected && time.Since(client.disconnectedAt) >= 2*time.Minute {
-				delete(client.doc.Users, client.uuid)
-				client.doc.mu.Unlock()
-				client.doc.broadcastUserList()
+				// Check if this client is still in the Users map and hasn't reconnected
+				if existingClient, exists := client.doc.Users[client.uuid]; exists && existingClient == client {
+					delete(client.doc.Users, client.uuid)
+					client.doc.mu.Unlock()
+					client.doc.broadcastUserList()
+				} else {
+					client.doc.mu.Unlock()
+				}
 			} else {
 				client.doc.mu.Unlock()
 			}
