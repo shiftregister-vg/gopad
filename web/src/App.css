@@ -32,8 +32,63 @@ html, body {
 }
 
 .connection-status {
-  font-size: 0.9em;
-  color: #61dafb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 100%;
+  border-radius: 0;
+  margin-left: -10px;
+  margin-bottom: -1px;
+  box-sizing: border-box;
+  transition: background 0.2s;
+}
+
+.connection-status svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.connection-status.connected {
+  background: #43a047;
+  color: #fff;
+}
+
+.connection-status.reconnecting {
+  background: #ffd600;
+  color: #222;
+}
+
+.connection-status.disconnected {
+  background: #e53935;
+  color: #fff;
+}
+
+.connection-status:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.connection-status .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 4px;
+}
+
+.connection-status.connected .status-dot {
+  background-color: #81c784;
+  box-shadow: 0 0 4px #81c784;
+}
+
+.connection-status.reconnecting .status-dot {
+  background-color: #ffd54f;
+  box-shadow: 0 0 4px #ffd54f;
+}
+
+.connection-status.disconnected .status-dot {
+  background-color: #e57373;
+  box-shadow: 0 0 4px #e57373;
 }
 
 main {
@@ -42,6 +97,7 @@ main {
   gap: 0;
   background: #181a1b;
   min-height: 0;
+  position: relative;
 }
 
 .user-list {
@@ -83,7 +139,7 @@ main {
   display: flex;
   flex-direction: column;
   padding-top: 16px;
-  padding-bottom: 16px;
+  padding-bottom: 38px;
   background: #1e1e1e;
   border-radius: 0 8px 8px 0;
   min-width: 0;
@@ -198,6 +254,7 @@ textarea:disabled {
   color: #61dafb;
   text-decoration: underline dotted;
   transition: color 0.2s;
+  font-size: 12px;
 }
 .room-id:hover {
   color: #4fa8c7;
@@ -802,4 +859,33 @@ textarea:disabled {
   display: block;
   color: #d0d0d0;
   fill: #d0d0d0;
+}
+
+.footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 22px;
+  background-color: #1e3a5f;
+  border-top: 1px solid #2d4b6e;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 12px;
+  z-index: 1000;
+}
+
+.footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+}
+
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 } 

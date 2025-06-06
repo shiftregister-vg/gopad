@@ -625,246 +625,255 @@ function RoomEditor() {
     }
   };
 
-  if (showNamePrompt) {
-    return (
-      <div className="name-prompt">
-        <form onSubmit={handleNameSubmit}>
-          <h2>Enter your name</h2>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Your name"
-            required
-            autoFocus
-          />
-          <button type="submit">Join</button>
-        </form>
-      </div>
-    );
-  }
-
   return (
-    <div className="app">
-      <header className="App-header">
-        <h1>GoPad</h1>
-        <div className="connection-status">
-          {copied && <span className="copy-tooltip">Copied!</span>}
-          Room: <span
-            className="room-id"
-            style={{ fontWeight: 600, cursor: 'pointer', color: '#61dafb', textDecoration: 'underline dotted' }}
-            title="Click to copy room URL"
-            onClick={handleCopyRoomUrl}
-          >
-            {roomId}
-          </span>
-          {' | Status: '}
-          {isConnected ? 'Connected' : reconnecting ? 'Reconnecting…' : 'Disconnected'}
-          {!isInitialized && isConnected && ' (Initializing...)'}
+    <div className="App">
+      {showNamePrompt ? (
+        <div className="name-prompt">
+          <form onSubmit={handleNameSubmit}>
+            <h2>Enter your name</h2>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your name"
+              autoFocus
+            />
+            <button type="submit">Join</button>
+          </form>
         </div>
-      </header>
-      <main className="main-layout">
-        <div className="left-panel">
-          <div className="user-list">
-            <div className="language-select">
-              <label htmlFor="language">Syntax:</label>
-              <select
-                id="language"
-                value={language}
-                onChange={handleLanguageChange}
-              >
-                <option value="plaintext">Plain Text</option>
-                <option value="javascript">JavaScript</option>
-                <option value="typescript">TypeScript</option>
-                <option value="python">Python</option>
-                <option value="java">Java</option>
-                <option value="c">C</option>
-                <option value="cpp">C++</option>
-                <option value="csharp">C#</option>
-                <option value="go">Go</option>
-                <option value="rust">Rust</option>
-                <option value="php">PHP</option>
-                <option value="ruby">Ruby</option>
-                <option value="swift">Swift</option>
-                <option value="kotlin">Kotlin</option>
-                <option value="json">JSON</option>
-                <option value="markdown">Markdown</option>
-                <option value="shell">Shell/Bash</option>
-                <option value="sql">SQL</option>
-                <option value="html">HTML</option>
-                <option value="css">CSS</option>
-                <option value="xml">XML</option>
-                <option value="powershell">PowerShell</option>
-                <option value="perl">Perl</option>
-                <option value="r">R</option>
-                <option value="dart">Dart</option>
-                <option value="scala">Scala</option>
-                <option value="objective-c">Objective-C</option>
-                <option value="vb">Visual Basic</option>
-                <option value="lua">Lua</option>
-                <option value="matlab">MATLAB</option>
-                <option value="groovy">Groovy</option>
-                <option value="yaml">YAML</option>
-              </select>
-            </div>
-            <h3>Connected Users</h3>
-            <ul>
-              {Object.entries(users || {}).map(([uuid, user]) => {
-                const isDisconnected = user.disconnected;
-                const isCurrentUser = uuid === currentUserUuid;
-                return (
-                  <li
-                    key={uuid}
-                    style={{
-                      color: user.color,
-                      opacity: isDisconnected ? 0.5 : 1,
-                      fontStyle: isDisconnected ? 'italic' : 'normal',
-                    }}
+      ) : (
+        <>
+          <main>
+            <div className="sidebar">
+              <div className="user-list">
+                <div className="language-select">
+                  <label htmlFor="language">Language:</label>
+                  <select
+                    id="language"
+                    value={language}
+                    onChange={handleLanguageChange}
                   >
-                    {isCurrentUser && editingName ? (
-                      <input
-                        type="text"
-                        value={nameEditValue}
-                        onChange={handleNameEditChange}
-                        onBlur={handleNameEditBlurOrEnter}
-                        onKeyDown={handleNameEditKeyDown}
+                    <option value="plaintext">Plain Text</option>
+                    <option value="javascript">JavaScript</option>
+                    <option value="typescript">TypeScript</option>
+                    <option value="python">Python</option>
+                    <option value="java">Java</option>
+                    <option value="c">C</option>
+                    <option value="cpp">C++</option>
+                    <option value="csharp">C#</option>
+                    <option value="go">Go</option>
+                    <option value="rust">Rust</option>
+                    <option value="php">PHP</option>
+                    <option value="ruby">Ruby</option>
+                    <option value="swift">Swift</option>
+                    <option value="kotlin">Kotlin</option>
+                    <option value="json">JSON</option>
+                    <option value="markdown">Markdown</option>
+                    <option value="shell">Shell/Bash</option>
+                    <option value="sql">SQL</option>
+                    <option value="html">HTML</option>
+                    <option value="css">CSS</option>
+                    <option value="xml">XML</option>
+                    <option value="powershell">PowerShell</option>
+                    <option value="perl">Perl</option>
+                    <option value="dart">Dart</option>
+                    <option value="scala">Scala</option>
+                    <option value="objective-c">Objective-C</option>
+                    <option value="vb">Visual Basic</option>
+                    <option value="lua">Lua</option>
+                    <option value="matlab">MATLAB</option>
+                    <option value="groovy">Groovy</option>
+                    <option value="yaml">YAML</option>
+                  </select>
+                </div>
+                <h3>Connected Users</h3>
+                <ul>
+                  {Object.entries(users || {}).map(([uuid, user]) => {
+                    const isDisconnected = user.disconnected;
+                    const isCurrentUser = uuid === currentUserUuid;
+                    return (
+                      <li
+                        key={uuid}
                         style={{
-                          background: '#23272e',
-                          border: '1px solid #444',
-                          borderRadius: '4px',
-                          padding: '2px 6px',
                           color: user.color,
-                          fontSize: 'inherit',
-                          fontFamily: 'inherit',
-                          width: '100%',
+                          opacity: isDisconnected ? 0.5 : 1,
+                          fontStyle: isDisconnected ? 'italic' : 'normal',
                         }}
-                        autoFocus
-                      />
-                    ) : (
-                      <>
-                        <span
-                          onDoubleClick={isCurrentUser ? handleNameDoubleClick : undefined}
-                          style={{ cursor: isCurrentUser ? 'text' : 'default' }}
-                        >
-                          {user.name}
-                        </span>
-                        {isCurrentUser && <span style={{ color: '#e0e0e0', marginLeft: 6, fontSize: '0.9em' }}>(me)</span>}
-                        {isDisconnected && <span style={{ color: '#bdbdbd', marginLeft: 6 }}>(disconnected)</span>}
-                      </>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </div>
-        <div className="main-content">
-          <div className="editor-header">
-            <div className="tab-bar">
-              {(tabs || []).map(tab => (
-                <div
-                  key={tab.id}
-                  className={`tab ${tab.id === activeTabId ? 'active' : ''}`}
-                  onClick={() => handleTabClick(tab.id)}
-                >
-                  {renamingTabId === tab.id ? (
-                    <input
-                      type="text"
-                      value={renameValue}
-                      autoFocus
-                      onChange={handleRenameChange}
-                      onBlur={() => handleRenameBlurOrEnter(tab.id)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') handleRenameBlurOrEnter(tab.id);
-                      }}
-                      style={{ width: '90px', fontSize: 'inherit', background: '#23272e', color: '#e0e0e0', border: '1px solid #444', borderRadius: 3, padding: '2px 6px' }}
-                    />
-                  ) : (
-                    <span onDoubleClick={() => handleTabDoubleClick(tab.id, tab.name)}>{tab.name}</span>
-                  )}
-                  <button
-                    className="tab-close"
-                    onClick={(e) => handleTabClose(tab.id, e)}
-                  >
-                    ×
+                      >
+                        {isCurrentUser && editingName ? (
+                          <input
+                            type="text"
+                            value={nameEditValue}
+                            onChange={handleNameEditChange}
+                            onBlur={handleNameEditBlurOrEnter}
+                            onKeyDown={handleNameEditKeyDown}
+                            style={{
+                              background: '#23272e',
+                              border: '1px solid #444',
+                              borderRadius: '4px',
+                              padding: '2px 6px',
+                              color: user.color,
+                              fontSize: 'inherit',
+                              fontFamily: 'inherit',
+                              width: '100%',
+                            }}
+                            autoFocus
+                          />
+                        ) : (
+                          <>
+                            <span
+                              onDoubleClick={isCurrentUser ? handleNameDoubleClick : undefined}
+                              style={{ cursor: isCurrentUser ? 'text' : 'default' }}
+                            >
+                              {user.name}
+                            </span>
+                            {isCurrentUser && <span style={{ color: '#e0e0e0', marginLeft: 6, fontSize: '0.9em' }}>(me)</span>}
+                            {isDisconnected && <span style={{ color: '#bdbdbd', marginLeft: 6 }}>(disconnected)</span>}
+                          </>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </div>
+            <div className="main-content">
+              <div className="editor-header">
+                <div className="tab-bar">
+                  {(tabs || []).map(tab => (
+                    <div
+                      key={tab.id}
+                      className={`tab ${tab.id === activeTabId ? 'active' : ''}`}
+                      onClick={() => handleTabClick(tab.id)}
+                    >
+                      {renamingTabId === tab.id ? (
+                        <input
+                          type="text"
+                          value={renameValue}
+                          autoFocus
+                          onChange={handleRenameChange}
+                          onBlur={() => handleRenameBlurOrEnter(tab.id)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') handleRenameBlurOrEnter(tab.id);
+                          }}
+                          style={{ width: '90px', fontSize: 'inherit', background: '#23272e', color: '#e0e0e0', border: '1px solid #444', borderRadius: 3, padding: '2px 6px' }}
+                        />
+                      ) : (
+                        <span onDoubleClick={() => handleTabDoubleClick(tab.id, tab.name)}>{tab.name}</span>
+                      )}
+                      <button
+                        className="tab-close"
+                        onClick={(e) => handleTabClose(tab.id, e)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  <button className="new-tab-button" onClick={handleNewTab}>
+                    +
                   </button>
                 </div>
-              ))}
-              <button className="new-tab-button" onClick={handleNewTab}>
-                +
-              </button>
-            </div>
-          </div>
-          <div className="editor-notes-row">
-            <div className="center-panel" ref={centerPanelRef} style={{ position: 'relative', height: '100%' }}>
-              <MonacoEditor
-                height="calc(100vh - 100px)"
-                language={language}
-                value={tabs.find(tab => tab.id === activeTabId)?.content || ''}
-                onChange={handleEditorChange}
-                onMount={handleEditorDidMount}
-                theme="vs-dark"
-                key={activeTabId}
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 14,
-                  wordWrap: 'on',
-                  lineNumbers: 'on',
-                  renderWhitespace: 'selection',
-                  scrollBeyondLastLine: false,
-                  automaticLayout: true,
-                  trimAutoWhitespace: false,
-                }}
-              />
-              <button
-                className="notes-panel-toggle"
-                onClick={() => setNotesPanelOpen(open => !open)}
-                title={notesPanelOpen ? 'Collapse Notes Panel' : 'Expand Notes Panel'}
-              >
-                {notesPanelOpen ? (
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M10 6L16 12L10 18" stroke="#d0d0d0" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                ) : (
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M14 6L8 12L14 18" stroke="#d0d0d0" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                )}
-              </button>
-            </div>
-            <div className={`notes-panel${notesPanelOpen ? ' open' : ' closed'}`}> 
-              {notesPanelOpen && (
-                <div className="notes-panel-content">
-                  <div className="notes-panel-header">
-                    <div className="notes-header-group">
-                      <span className="tab-notes-label">Notes</span>
-                      {!(tabs.find(t => t.id === activeTabId)?.notes) && editingNotes !== activeTabId && (
-                        <button className="add-notes-icon" onClick={() => handleNotesEdit(activeTabId)} title="Add Notes">
-                          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M15.232 2.232a2.5 2.5 0 0 1 3.536 3.536l-11.25 11.25a2 2 0 0 1-.707.464l-4 1.333a.5.5 0 0 1-.632-.632l1.333-4a2 2 0 0 1 .464-.707l11.25-11.25zm2.122 1.414a1.5 1.5 0 0 0-2.122 0l-1.086 1.086 2.122 2.122 1.086-1.086a1.5 1.5 0 0 0 0-2.122zM3.5 15.793l10.25-10.25 2.122 2.122-10.25 10.25-2.122-2.122zm-.707 1.414l1.415 1.415-2.122.707.707-2.122z" fill="currentColor"/>
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                    <div className="notes-header-actions">
-                      {!!tabs.find(t => t.id === activeTabId)?.notes && (
-                        <button onClick={() => handleNotesEdit(activeTabId)} className="edit-notes-link">
-                          Edit
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="tab-notes">
-                    <div className="notes-display">
-                      <div className="notes-content">
-                        <ReactMarkdown components={markdownComponents}>
-                          {tabs.find(t => t.id === activeTabId)?.notes || ''}
-                        </ReactMarkdown>
+              </div>
+              <div className="editor-notes-row">
+                <div className="center-panel" ref={centerPanelRef} style={{ position: 'relative', height: '100%' }}>
+                  <MonacoEditor
+                    height="calc(100vh - 100px)"
+                    language={language}
+                    value={tabs.find(tab => tab.id === activeTabId)?.content || ''}
+                    onChange={handleEditorChange}
+                    onMount={handleEditorDidMount}
+                    theme="vs-dark"
+                    key={activeTabId}
+                    options={{
+                      minimap: { enabled: false },
+                      fontSize: 14,
+                      wordWrap: 'on',
+                      lineNumbers: 'on',
+                      renderWhitespace: 'selection',
+                      scrollBeyondLastLine: false,
+                      automaticLayout: true,
+                      trimAutoWhitespace: false,
+                    }}
+                  />
+                  <button
+                    className="notes-panel-toggle"
+                    onClick={() => setNotesPanelOpen(open => !open)}
+                    title={notesPanelOpen ? 'Collapse Notes Panel' : 'Expand Notes Panel'}
+                  >
+                    {notesPanelOpen ? (
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10 6L16 12L10 18" stroke="#d0d0d0" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    ) : (
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M14 6L8 12L14 18" stroke="#d0d0d0" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                <div className={`notes-panel${notesPanelOpen ? ' open' : ' closed'}`}> 
+                  {notesPanelOpen && (
+                    <div className="notes-panel-content">
+                      <div className="notes-panel-header">
+                        <div className="notes-header-group">
+                          <span className="tab-notes-label">Notes</span>
+                          {!(tabs.find(t => t.id === activeTabId)?.notes) && editingNotes !== activeTabId && (
+                            <button className="add-notes-icon" onClick={() => handleNotesEdit(activeTabId)} title="Add Notes">
+                              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M15.232 2.232a2.5 2.5 0 0 1 3.536 3.536l-11.25 11.25a2 2 0 0 1-.707.464l-4 1.333a.5.5 0 0 1-.632-.632l1.333-4a2 2 0 0 1 .464-.707l11.25-11.25zm2.122 1.414a1.5 1.5 0 0 0-2.122 0l-1.086 1.086 2.122 2.122 1.086-1.086a1.5 1.5 0 0 0 0-2.122zM3.5 15.793l10.25-10.25 2.122 2.122-10.25 10.25-2.122-2.122zm-.707 1.414l1.415 1.415-2.122.707.707-2.122z" fill="currentColor"/>
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                        <div className="notes-header-actions">
+                          {!!tabs.find(t => t.id === activeTabId)?.notes && (
+                            <button onClick={() => handleNotesEdit(activeTabId)} className="edit-notes-link">
+                              Edit
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="tab-notes">
+                        <div className="notes-display">
+                          <div className="notes-content">
+                            <ReactMarkdown components={markdownComponents}>
+                              {tabs.find(t => t.id === activeTabId)?.notes || ''}
+                            </ReactMarkdown>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
-              )}
+              </div>
+            </div>
+          </main>
+          <div className="footer">
+            <div className="footer-left">
+              <div className={`connection-status ${isConnected ? 'connected' : reconnecting ? 'reconnecting' : 'disconnected'}`}>
+                {isConnected ? (
+                  // Wifi icon (connected)
+                  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 18c.552 0 1 .448 1 1s-.448 1-1 1-1-.448-1-1 .448-1 1-1zm-4.243-2.828a6 6 0 0 1 8.486 0 1 1 0 0 1-1.414 1.414 4 4 0 0 0-5.657 0 1 1 0 1 1-1.415-1.414zm-2.828-2.829a10 10 0 0 1 14.142 0 1 1 0 1 1-1.415 1.415 8 8 0 0 0-11.313 0 1 1 0 1 1-1.414-1.415zm-2.829-2.829a14 14 0 0 1 19.798 0 1 1 0 1 1-1.415 1.415 12 12 0 0 0-16.97 0 1 1 0 1 1-1.414-1.415z" fill="currentColor"/>
+                  </svg>
+                ) : reconnecting ? (
+                  // Sync/refresh icon (reconnecting)
+                  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z" fill="currentColor"/>
+                  </svg>
+                ) : (
+                  // Wifi-off icon (disconnected)
+                  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M2.1 3.51a1 1 0 0 1 1.41 0l16.98 16.98a1 1 0 0 1-1.41 1.41l-2.13-2.13A13.93 13.93 0 0 1 12 21c-3.31 0-6.36-1.14-8.77-3.05a1 1 0 1 1 1.28-1.54A11.95 11.95 0 0 0 12 19c1.7 0 3.33-.33 4.8-.93l-2.13-2.13a6 6 0 0 0-8.49-8.49L3.51 4.92a1 1 0 0 1 0-1.41zm16.36 2.12a1 1 0 0 1 1.41 1.41l-1.43 1.43a13.93 13.93 0 0 1 3.05 8.77c0 1.7-.33 3.33-.93 4.8l-2.13-2.13a6 6 0 0 0-8.49-8.49L4.92 3.51a1 1 0 0 1 1.41-1.41l1.43 1.43A13.93 13.93 0 0 1 12 3c3.31 0 6.36 1.14 8.77 3.05z" fill="currentColor"/>
+                  </svg>
+                )}
+              </div>
+            </div>
+            <div className="footer-right">
+              <span className="room-id" onClick={handleCopyRoomUrl}>
+                Room: {roomId}
+                {copied && <span className="copy-tooltip">Copied!</span>}
+              </span>
             </div>
           </div>
           <Modal
@@ -887,8 +896,8 @@ function RoomEditor() {
               <button onClick={handleNotesCancel} className="cancel-button">Cancel</button>
             </div>
           </Modal>
-        </div>
-      </main>
+        </>
+      )}
     </div>
   );
 }
