@@ -57,6 +57,7 @@ type Tab struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Content string `json:"content"`
+	Notes   string `json:"notes"`
 }
 
 type Client struct {
@@ -190,6 +191,7 @@ func (doc *Document) ensureMinimumTabs() {
 				ID:      "1",
 				Name:    "Untitled",
 				Content: "",
+				Notes:   "",
 			},
 		}
 		doc.ActiveTabId = "1"
@@ -214,6 +216,7 @@ func getOrCreateDocument(docID string) *Document {
 						ID:      "1",
 						Name:    "Untitled",
 						Content: "",
+						Notes:   "",
 					},
 				},
 				ActiveTabId: "1",
@@ -239,6 +242,7 @@ func getOrCreateDocument(docID string) *Document {
 				ID:      t.ID,
 				Name:    t.Name,
 				Content: t.Content,
+				Notes:   t.Notes,
 			}
 		}
 		doc.ensureMinimumTabs() // Ensure minimum tabs after loading
@@ -263,6 +267,7 @@ func getOrCreateDocument(docID string) *Document {
 							ID:      t.ID,
 							Name:    t.Name,
 							Content: t.Content,
+							Notes:   t.Notes,
 						}
 					}
 
@@ -502,6 +507,7 @@ func (c *Client) readPump() {
 						ID:      tab["id"].(string),
 						Name:    tab["name"].(string),
 						Content: tab["content"].(string),
+						Notes:   tab["notes"].(string),
 					}
 					c.doc.Tabs = append(c.doc.Tabs, newTab)
 					c.doc.mu.Unlock()
@@ -778,6 +784,7 @@ func (doc *Document) saveState() error {
 			ID:      t.ID,
 			Name:    t.Name,
 			Content: t.Content,
+			Notes:   t.Notes,
 		}
 	}
 	doc.mu.RUnlock()

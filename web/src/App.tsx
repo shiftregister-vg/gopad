@@ -9,6 +9,12 @@ import {
 } from 'react-router-dom';
 import MonacoEditor, { OnMount } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
+import ReactMarkdown from 'react-markdown';
+import Modal from 'react-modal';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+
+Modal.setAppElement('#root');
 
 // ResizeObserver polyfill
 if (typeof window !== 'undefined' && !window.ResizeObserver) {
@@ -79,6 +85,7 @@ interface Tab {
   id: string;
   name: string;
   content: string;
+  notes: string;
 }
 
 interface CursorMessage {
@@ -253,6 +260,27 @@ function getTabStorageKey(roomId: string, tabId: string) {
   return `gopad-room-${roomId}-tab-${tabId}`;
 }
 
+// Markdown renderers for syntax highlighting
+const markdownComponents = {
+  code({node, inline, className, children, ...props}: any) {
+    const match = /language-(\w+)/.exec(className || '');
+    return !inline && match ? (
+      <SyntaxHighlighter
+        style={vscDarkPlus}
+        language={match[1]}
+        PreTag="div"
+        {...props}
+      >
+        {String(children).replace(/\n$/, '')}
+      </SyntaxHighlighter>
+    ) : (
+      <code className={className} {...props}>
+        {children}
+      </code>
+    );
+  }
+};
+
 function RoomEditor() {
   const { roomId } = useParams();
   const [name, setName] = useState(getStoredName());
@@ -263,8 +291,11 @@ function RoomEditor() {
     id: '1',
     name: 'Untitled',
     content: '',
+    notes: '',
   }]);
   const [activeTabId, setActiveTabId] = useState('1');
+  const [editingNotes, setEditingNotes] = useState<string | null>(null);
+  const [notesContent, setNotesContent] = useState('');
   const wsRef = useRef<WebSocket | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const decorationsRef = useRef<string[]>([]);
@@ -276,6 +307,7 @@ function RoomEditor() {
   const [remoteCursors, setRemoteCursors] = useState<{ [uuid: string]: CursorMessage }>({});
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [notesPanelOpen, setNotesPanelOpen] = useState(true);
 
   const handleInit = (data: FullStateMessage) => {
     if (data.tabs && Array.isArray(data.tabs)) {
@@ -445,6 +477,7 @@ function RoomEditor() {
           id: generateUUID(),
           name: 'Untitled',
           content: '',
+          notes: '',
         },
       }));
     }
@@ -494,6 +527,34 @@ function RoomEditor() {
     setRenamingTabId(null);
   };
 
+  const handleNotesEdit = (tabId: string) => {
+    const tab = tabs.find(t => t.id === tabId);
+    if (tab) {
+      setEditingNotes(tabId);
+      setNotesContent(tab.notes);
+    }
+  };
+
+  const handleNotesSave = (tabId: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const updatedTabs = tabs.map(tab =>
+        tab.id === tabId ? { ...tab, notes: notesContent } : tab
+      );
+      setTabs(updatedTabs);
+      
+      wsRef.current.send(JSON.stringify({
+        type: 'tabUpdate',
+        tabs: updatedTabs,
+        activeTabId,
+      }));
+    }
+    setEditingNotes(null);
+  };
+
+  const handleNotesCancel = () => {
+    setEditingNotes(null);
+  };
+
   // Add effect to update editor content when active tab changes
   useEffect(() => {
     if (editorRef.current) {
@@ -527,7 +588,7 @@ function RoomEditor() {
   }
 
   return (
-    <div className="App">
+    <div className="app">
       <header className="App-header">
         <h1>GoPad</h1>
         <div className="connection-status">
@@ -545,70 +606,72 @@ function RoomEditor() {
           {!isInitialized && isConnected && ' (Initializing...)'}
         </div>
       </header>
-      <main>
-        <div className="user-list">
-          <div className="language-select">
-            <label htmlFor="language">Syntax:</label>
-            <select
-              id="language"
-              value={language}
-              onChange={handleLanguageChange}
-            >
-              <option value="plaintext">Plain Text</option>
-              <option value="javascript">JavaScript</option>
-              <option value="typescript">TypeScript</option>
-              <option value="python">Python</option>
-              <option value="java">Java</option>
-              <option value="c">C</option>
-              <option value="cpp">C++</option>
-              <option value="csharp">C#</option>
-              <option value="go">Go</option>
-              <option value="rust">Rust</option>
-              <option value="php">PHP</option>
-              <option value="ruby">Ruby</option>
-              <option value="swift">Swift</option>
-              <option value="kotlin">Kotlin</option>
-              <option value="json">JSON</option>
-              <option value="markdown">Markdown</option>
-              <option value="shell">Shell/Bash</option>
-              <option value="sql">SQL</option>
-              <option value="html">HTML</option>
-              <option value="css">CSS</option>
-              <option value="xml">XML</option>
-              <option value="powershell">PowerShell</option>
-              <option value="perl">Perl</option>
-              <option value="r">R</option>
-              <option value="dart">Dart</option>
-              <option value="scala">Scala</option>
-              <option value="objective-c">Objective-C</option>
-              <option value="vb">Visual Basic</option>
-              <option value="lua">Lua</option>
-              <option value="matlab">MATLAB</option>
-              <option value="groovy">Groovy</option>
-              <option value="yaml">YAML</option>
-            </select>
+      <main className="main-layout">
+        <div className="left-panel">
+          <div className="user-list">
+            <div className="language-select">
+              <label htmlFor="language">Syntax:</label>
+              <select
+                id="language"
+                value={language}
+                onChange={handleLanguageChange}
+              >
+                <option value="plaintext">Plain Text</option>
+                <option value="javascript">JavaScript</option>
+                <option value="typescript">TypeScript</option>
+                <option value="python">Python</option>
+                <option value="java">Java</option>
+                <option value="c">C</option>
+                <option value="cpp">C++</option>
+                <option value="csharp">C#</option>
+                <option value="go">Go</option>
+                <option value="rust">Rust</option>
+                <option value="php">PHP</option>
+                <option value="ruby">Ruby</option>
+                <option value="swift">Swift</option>
+                <option value="kotlin">Kotlin</option>
+                <option value="json">JSON</option>
+                <option value="markdown">Markdown</option>
+                <option value="shell">Shell/Bash</option>
+                <option value="sql">SQL</option>
+                <option value="html">HTML</option>
+                <option value="css">CSS</option>
+                <option value="xml">XML</option>
+                <option value="powershell">PowerShell</option>
+                <option value="perl">Perl</option>
+                <option value="r">R</option>
+                <option value="dart">Dart</option>
+                <option value="scala">Scala</option>
+                <option value="objective-c">Objective-C</option>
+                <option value="vb">Visual Basic</option>
+                <option value="lua">Lua</option>
+                <option value="matlab">MATLAB</option>
+                <option value="groovy">Groovy</option>
+                <option value="yaml">YAML</option>
+              </select>
+            </div>
+            <h3>Connected Users</h3>
+            <ul>
+              {Object.entries(users || {}).map(([uuid, user]) => {
+                const isDisconnected = user.disconnected;
+                return (
+                  <li
+                    key={uuid}
+                    style={{
+                      color: user.color,
+                      opacity: isDisconnected ? 0.5 : 1,
+                      fontStyle: isDisconnected ? 'italic' : 'normal',
+                    }}
+                  >
+                    {user.name}
+                    {isDisconnected && <span style={{ color: '#bdbdbd', marginLeft: 6 }}>(disconnected)</span>}
+                  </li>
+                );
+              })}
+            </ul>
           </div>
-          <h3>Connected Users</h3>
-          <ul>
-            {Object.entries(users || {}).map(([uuid, user]) => {
-              const isDisconnected = user.disconnected;
-              return (
-                <li
-                  key={uuid}
-                  style={{
-                    color: user.color,
-                    opacity: isDisconnected ? 0.5 : 1,
-                    fontStyle: isDisconnected ? 'italic' : 'normal',
-                  }}
-                >
-                  {user.name}
-                  {isDisconnected && <span style={{ color: '#bdbdbd', marginLeft: 6 }}>(disconnected)</span>}
-                </li>
-              );
-            })}
-          </ul>
         </div>
-        <div className="editor-container">
+        <div className="main-content">
           <div className="editor-header">
             <div className="tab-bar">
               {(tabs || []).map(tab => (
@@ -645,25 +708,93 @@ function RoomEditor() {
               </button>
             </div>
           </div>
-          <MonacoEditor
-            height="calc(100vh - 100px)"
-            language={language}
-            value={tabs.find(tab => tab.id === activeTabId)?.content || ''}
-            onChange={handleEditorChange}
-            onMount={handleEditorDidMount}
-            theme="vs-dark"
-            key={activeTabId}
-            options={{
-              minimap: { enabled: false },
-              fontSize: 14,
-              wordWrap: 'on',
-              lineNumbers: 'on',
-              renderWhitespace: 'selection',
-              scrollBeyondLastLine: false,
-              automaticLayout: true,
-              trimAutoWhitespace: false,
-            }}
-          />
+          <div className="editor-notes-row">
+            <div className="center-panel">
+              <MonacoEditor
+                height="calc(100vh - 100px)"
+                language={language}
+                value={tabs.find(tab => tab.id === activeTabId)?.content || ''}
+                onChange={handleEditorChange}
+                onMount={handleEditorDidMount}
+                theme="vs-dark"
+                key={activeTabId}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 14,
+                  wordWrap: 'on',
+                  lineNumbers: 'on',
+                  renderWhitespace: 'selection',
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  trimAutoWhitespace: false,
+                }}
+              />
+            </div>
+            <div className={`notes-panel${notesPanelOpen ? ' open' : ' closed'}`}> 
+              {notesPanelOpen && (
+                <div className="notes-panel-content">
+                  <div className="notes-panel-header">
+                    <div className="notes-header-group">
+                      <span className="tab-notes-label">Notes</span>
+                      {!(tabs.find(t => t.id === activeTabId)?.notes) && editingNotes !== activeTabId && (
+                        <button className="add-notes-icon" onClick={() => handleNotesEdit(activeTabId)} title="Add Notes">
+                          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M15.232 2.232a2.5 2.5 0 0 1 3.536 3.536l-11.25 11.25a2 2 0 0 1-.707.464l-4 1.333a.5.5 0 0 1-.632-.632l1.333-4a2 2 0 0 1 .464-.707l11.25-11.25zm2.122 1.414a1.5 1.5 0 0 0-2.122 0l-1.086 1.086 2.122 2.122 1.086-1.086a1.5 1.5 0 0 0 0-2.122zM3.5 15.793l10.25-10.25 2.122 2.122-10.25 10.25-2.122-2.122zm-.707 1.414l1.415 1.415-2.122.707.707-2.122z" fill="currentColor"/>
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                    <div className="notes-header-actions">
+                      {!!tabs.find(t => t.id === activeTabId)?.notes && (
+                        <button onClick={() => handleNotesEdit(activeTabId)} className="edit-notes-link">
+                          Edit
+                        </button>
+                      )}
+                      <button className="notes-panel-toggle" onClick={() => setNotesPanelOpen(open => !open)}>
+                        {notesPanelOpen ? '→' : '←'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="tab-notes">
+                    <div className="notes-display">
+                      <div className="notes-content">
+                        <ReactMarkdown components={markdownComponents}>
+                          {tabs.find(t => t.id === activeTabId)?.notes || ''}
+                        </ReactMarkdown>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {!notesPanelOpen && (
+                <div className="notes-panel-collapsed">
+                  <button className="notes-panel-toggle" onClick={() => setNotesPanelOpen(open => !open)}>
+                    ←
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+          <Modal
+            isOpen={editingNotes === activeTabId}
+            onRequestClose={handleNotesCancel}
+            contentLabel="Edit Notes"
+            className="notes-modal"
+            overlayClassName="notes-modal-overlay"
+          >
+            <h2 className="notes-modal-title">Edit Notes</h2>
+            <textarea
+              value={notesContent}
+              onChange={(e) => setNotesContent(e.target.value)}
+              placeholder="Enter notes in markdown format..."
+              className="notes-modal-textarea"
+              autoFocus
+            />
+            <div className="notes-modal-actions">
+              <button onClick={() => handleNotesSave(activeTabId)} className="save-button">Save</button>
+              <button onClick={handleNotesCancel} className="cancel-button">Cancel</button>
+            </div>
+          </Modal>
         </div>
       </main>
     </div>

@@ -25,6 +25,7 @@ type Tab struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Content string `json:"content"`
+	Notes   string `json:"notes"` // Added for storing markdown notes
 }
 
 // Storage handles persistent document state using Redis
