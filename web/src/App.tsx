@@ -143,7 +143,13 @@ interface TabUpdateMessage {
   activeTabId: string;
 }
 
-type WebSocketMessage = UpdateMessage | UserListMessage | LanguageMessage | CursorMessage | TabFocusMessage | TabCreateMessage | TabRenameMessage | FullStateMessage | TabUpdateMessage;
+interface TabNotesUpdateMessage {
+  type: 'tabNotesUpdate';
+  tabId: string;
+  notes: string;
+}
+
+type WebSocketMessage = UpdateMessage | UserListMessage | LanguageMessage | CursorMessage | TabFocusMessage | TabCreateMessage | TabRenameMessage | FullStateMessage | TabUpdateMessage | TabNotesUpdateMessage;
 
 function generateRoomId() {
   return Math.random().toString(36).substring(2, 10);
@@ -405,6 +411,14 @@ function RoomEditor() {
               setTabs(updateData.tabs);
               setActiveTabId(updateData.activeTabId);
               break;
+            case 'tabNotesUpdate':
+              const notesMsg = data as TabNotesUpdateMessage;
+              setTabs(prevTabs =>
+                prevTabs.map(tab =>
+                  tab.id === notesMsg.tabId ? { ...tab, notes: notesMsg.notes } : tab
+                )
+              );
+              break;
           }
         }
       } catch (e) {
@@ -538,16 +552,14 @@ function RoomEditor() {
 
   const handleNotesSave = (tabId: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const updatedTabs = tabs.map(tab =>
-        tab.id === tabId ? { ...tab, notes: notesContent } : tab
-      );
-      setTabs(updatedTabs);
-      
       wsRef.current.send(JSON.stringify({
-        type: 'tabUpdate',
-        tabs: updatedTabs,
-        activeTabId,
+        type: 'tabNotesUpdate',
+        tabId,
+        notes: notesContent,
       }));
+      setTabs(prevTabs => prevTabs.map(tab =>
+        tab.id === tabId ? { ...tab, notes: notesContent } : tab
+      ));
     }
     setEditingNotes(null);
   };

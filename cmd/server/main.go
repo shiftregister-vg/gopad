@@ -649,6 +649,35 @@ func (c *Client) readPump() {
 						}
 					}
 				}
+			case "tabNotesUpdate":
+				if tabId, ok := jsonMsg["tabId"].(string); ok {
+					if notes, ok := jsonMsg["notes"].(string); ok {
+						c.doc.mu.Lock()
+						for i, tab := range c.doc.Tabs {
+							if tab.ID == tabId {
+								c.doc.Tabs[i].Notes = notes
+								break
+							}
+						}
+						c.doc.mu.Unlock()
+
+						// Broadcast to all clients
+						broadcastMsg := map[string]interface{}{
+							"type":  "tabNotesUpdate",
+							"tabId": tabId,
+							"notes": notes,
+						}
+						jsonMsg, err := json.Marshal(broadcastMsg)
+						if err == nil {
+							c.doc.broadcast <- BroadcastMessage{Sender: c, Message: jsonMsg}
+						}
+
+						// Save state after update
+						if err := c.doc.saveState(); err != nil {
+							log.Printf("Error saving document state: %v", err)
+						}
+					}
+				}
 			}
 		}
 	}
