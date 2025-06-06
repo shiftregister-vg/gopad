@@ -72,7 +72,14 @@ interface TabRenameMessage {
   name: string;
 }
 
-type WebSocketMessage = InitMessage | UpdateMessage | UserListMessage | LanguageMessage | CursorMessage | TabFocusMessage | TabCreateMessage | TabRenameMessage;
+interface FullStateMessage {
+  type: 'fullState';
+  tabs: Tab[];
+  activeTabId: string;
+  language: string;
+}
+
+type WebSocketMessage = InitMessage | UpdateMessage | UserListMessage | LanguageMessage | CursorMessage | TabFocusMessage | TabCreateMessage | TabRenameMessage | FullStateMessage;
 
 // Monaco supported languages (common set, can be expanded)
 const MONACO_LANGUAGES = [
@@ -180,6 +187,10 @@ function saveRoomLanguage(roomId: string, language: string) {
 
 function loadRoomLanguage(roomId: string): string | null {
   return localStorage.getItem(getRoomLanguageKey(roomId));
+}
+
+function getRoomFullStateKey(roomId: string) {
+  return `gopad-room-fullstate-${roomId}`;
 }
 
 function injectCursorStyles(uuid: string, color: string) {
@@ -301,10 +312,19 @@ function RoomEditor() {
       console.log('WebSocket opened', wsHost);
       setIsConnected(true);
       setReconnecting(false);
+      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
       ws.send(JSON.stringify({ type: 'setName', uuid: getOrCreateUUID(), name: name.trim() }));
     };
     ws.onclose = (event) => {
       console.log('WebSocket closed', event);
+      setIsConnected(false);
+      setIsInitialized(false);
+      setReconnecting(true);
+      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+      reconnectTimeout.current = setTimeout(() => {
+        console.log('Attempting reconnect... isInitialized:', isInitialized);
+        connectWebSocket();
+      }, 2000);
     };
     ws.onerror = (event) => {
       console.log('WebSocket error', event);
@@ -313,31 +333,80 @@ function RoomEditor() {
       console.log('WebSocket message', event.data);
       try {
         const data = JSON.parse(event.data) as WebSocketMessage;
-        if (data.type === 'init') {
-          handleInit(data);
-        } else if (data.type === 'update') {
-          setTabs(prevTabs => prevTabs.map(tab =>
-            tab.id === data.tabId ? { ...tab, content: data.content } : tab
-          ));
-        } else if (data.type === 'userList') {
-          setUsers(data.users);
-        } else if (data.type === 'language') {
-          setLanguage(data.language);
-        } else if (data.type === 'cursor') {
-          const msg = data as CursorMessage;
-          setRemoteCursors((prev) => ({ ...prev, [msg.uuid]: msg }));
-        } else if (data.type === 'tabCreate') {
-          setTabs(prevTabs => {
-            if (prevTabs.some(tab => tab.id === data.tab.id)) return prevTabs;
-            return [...prevTabs, { id: data.tab.id, name: data.tab.name, content: data.tab.content || '' }];
-          });
-          setActiveTabId(data.tab.id);
-        } else if (data.type === 'tabFocus') {
-          setActiveTabId(data.tabId);
-        } else if (data.type === 'tabRename') {
-          setTabs(prevTabs => prevTabs.map(tab =>
-            tab.id === data.tabId ? { ...tab, name: data.name } : tab
-          ));
+        if (typeof data === 'object' && data !== null && 'type' in data) {
+          const msgType = (data as { type: string }).type;
+          if (msgType === 'init') {
+            handleInit(data);
+          } else if (msgType === 'update') {
+            setTabs(prevTabs => prevTabs.map(tab =>
+              tab.id === (data as any).tabId ? { ...tab, content: (data as any).content } : tab
+            ));
+          } else if (msgType === 'userList') {
+            setUsers((data as any).users);
+          } else if (msgType === 'language') {
+            setLanguage((data as any).language);
+          } else if (msgType === 'cursor') {
+            const msg = data as CursorMessage;
+            setRemoteCursors((prev) => ({ ...prev, [msg.uuid]: msg }));
+          } else if (msgType === 'tabCreate') {
+            setTabs(prevTabs => {
+              if (prevTabs.some(tab => tab.id === (data as any).tab.id)) return prevTabs;
+              return [...prevTabs, { id: (data as any).tab.id, name: (data as any).tab.name, content: (data as any).tab.content || '' }];
+            });
+            setActiveTabId((data as any).tab.id);
+          } else if (msgType === 'tabFocus') {
+            setActiveTabId((data as any).tabId);
+          } else if (msgType === 'tabRename') {
+            setTabs(prevTabs => prevTabs.map(tab =>
+              tab.id === (data as any).tabId ? { ...tab, name: (data as any).name } : tab
+            ));
+          } else if (msgType === 'requestState') {
+            // Send full state to server, prefer localStorage if available
+            let stateToSend = { tabs, activeTabId, language };
+            if (roomId) {
+              const saved = localStorage.getItem(getRoomFullStateKey(roomId));
+              if (saved) {
+                try {
+                  const parsed = JSON.parse(saved);
+                  if (parsed && parsed.tabs && parsed.activeTabId && parsed.language) {
+                    stateToSend = parsed;
+                  }
+                } catch {}
+              }
+            }
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({
+                type: 'fullState',
+                ...stateToSend,
+              }));
+            }
+          } else if (msgType === 'fullState' || msgType === 'init') {
+            console.log('Received init/fullState', data);
+            if ('tabs' in data && 'activeTabId' in data && 'language' in data) {
+              setTabs((data as any).tabs);
+              setActiveTabId((data as any).activeTabId);
+              setLanguage((data as any).language);
+              // Save to localStorage
+              if (roomId) {
+                localStorage.setItem(getRoomFullStateKey(roomId), JSON.stringify({
+                  tabs: (data as any).tabs,
+                  activeTabId: (data as any).activeTabId,
+                  language: (data as any).language,
+                }));
+              }
+              setIsInitialized(true);
+              console.log('Initialization complete (tabs, activeTabId, language set, isInitialized=true)');
+            } else {
+              // fallback for old init
+              if ('content' in data && (data as any).content) {
+                setTabs([{ id: '1', name: 'Untitled', content: (data as any).content }]);
+                setActiveTabId('1');
+              }
+              if ('language' in data && (data as any).language) setLanguage((data as any).language);
+              setIsInitialized(true);
+              console.log('Initialization complete (fallback, isInitialized=true)');
+            }
+          }
         }
       } catch (e) {
         // ignore
@@ -576,6 +645,13 @@ function RoomEditor() {
     const savedLang = loadRoomLanguage(roomId);
     if (savedLang) setLanguage(savedLang);
   }, [roomId]);
+
+  // Save full state to localStorage on every change
+  useEffect(() => {
+    if (!roomId) return;
+    const state = { tabs, activeTabId, language };
+    localStorage.setItem(getRoomFullStateKey(roomId), JSON.stringify(state));
+  }, [roomId, tabs, activeTabId, language]);
 
   if (showNamePrompt) {
     return (

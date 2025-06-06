@@ -46,6 +46,8 @@ type Document struct {
 	unregister   chan *Client
 	lastModified int64 // unix timestamp (ms)
 	mu           sync.RWMutex
+	// Peer recovery additions:
+	waitingForState []*Client // clients waiting for state
 	// TODO: add tab support
 }
 
@@ -197,21 +199,34 @@ func handleWebSocket(c *gin.Context) {
 		send:  make(chan []byte, 256),
 		doc:   doc,
 	}
-	// Send initial document state to the new client
-	doc.mu.RLock()
-	initialState := map[string]interface{}{
-		"type":         "init",
-		"content":      doc.Content,
-		"users":        doc.Users,
-		"language":     doc.Language,
-		"lastModified": doc.lastModified,
-	}
-	doc.mu.RUnlock()
-	log.Printf("Sending initial state to client: %s", doc.Content)
-	if err := conn.WriteJSON(initialState); err != nil {
-		log.Printf("error sending initial state: %v", err)
-		conn.Close()
-		return
+	// Peer recovery: if doc has no state, queue client and request state from others
+	doc.mu.Lock()
+	noState := doc.Content == "" && len(doc.Users) == 0
+	if noState && len(doc.clients) > 0 {
+		doc.waitingForState = append(doc.waitingForState, client)
+		doc.mu.Unlock()
+		// Ask existing clients for state
+		requestMsg := map[string]interface{}{"type": "requestState"}
+		jsonMsg, _ := json.Marshal(requestMsg)
+		for c := range doc.clients {
+			c.send <- jsonMsg
+		}
+	} else {
+		// Send initial document state to the new client
+		initialState := map[string]interface{}{
+			"type":         "init",
+			"content":      doc.Content,
+			"users":        doc.Users,
+			"language":     doc.Language,
+			"lastModified": doc.lastModified,
+		}
+		doc.mu.Unlock()
+		log.Printf("Sending initial state to client: %s", doc.Content)
+		if err := conn.WriteJSON(initialState); err != nil {
+			log.Printf("error sending initial state: %v", err)
+			conn.Close()
+			return
+		}
 	}
 	doc.register <- client
 	// Start goroutines for reading and writing
@@ -396,6 +411,28 @@ func (c *Client) readPump() {
 							continue
 						}
 						c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+					}
+				}
+			case "requestState":
+				// Ignore: only sent by server
+			case "fullState":
+				// Only accept if there are clients waiting for state
+				doc := c.doc
+				doc.mu.Lock()
+				waiting := doc.waitingForState
+				doc.waitingForState = nil
+				doc.mu.Unlock()
+				if len(waiting) > 0 {
+					// Change type to 'init' before sending
+					var state map[string]interface{}
+					if err := json.Unmarshal(message, &state); err == nil {
+						state["type"] = "init"
+						initMsg, _ := json.Marshal(state)
+						for _, waitingClient := range waiting {
+							if waitingClient.conn != nil {
+								waitingClient.conn.WriteMessage(websocket.TextMessage, initMsg)
+							}
+						}
 					}
 				}
 			}
