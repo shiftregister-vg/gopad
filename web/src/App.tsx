@@ -294,6 +294,8 @@ function RoomEditor() {
   const [language, setLanguage] = useState('plaintext');
   const [users, setUsers] = useState<{ [key: string]: UserInfo }>({});
   const [currentUserUuid, setCurrentUserUuid] = useState(getOrCreateUUID());
+  const [editingName, setEditingName] = useState(false);
+  const [nameEditValue, setNameEditValue] = useState('');
   const [tabs, setTabs] = useState<Tab[]>([{
     id: '1',
     name: 'Untitled',
@@ -592,6 +594,37 @@ function RoomEditor() {
     }, 50);
   }, [notesPanelOpen]);
 
+  const handleNameDoubleClick = () => {
+    setEditingName(true);
+    setNameEditValue(name);
+  };
+
+  const handleNameEditChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNameEditValue(e.target.value);
+  };
+
+  const handleNameEditBlurOrEnter = () => {
+    if (nameEditValue.trim() && wsRef.current?.readyState === WebSocket.OPEN) {
+      const newName = nameEditValue.trim();
+      setName(newName);
+      setStoredName(newName);
+      wsRef.current.send(JSON.stringify({
+        type: 'setName',
+        uuid: currentUserUuid,
+        name: newName,
+      }));
+    }
+    setEditingName(false);
+  };
+
+  const handleNameEditKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleNameEditBlurOrEnter();
+    } else if (e.key === 'Escape') {
+      setEditingName(false);
+    }
+  };
+
   if (showNamePrompt) {
     return (
       <div className="name-prompt">
@@ -688,9 +721,37 @@ function RoomEditor() {
                       fontStyle: isDisconnected ? 'italic' : 'normal',
                     }}
                   >
-                    {user.name}
-                    {isCurrentUser && <span style={{ color: '#e0e0e0', marginLeft: 6, fontSize: '0.9em' }}>(me)</span>}
-                    {isDisconnected && <span style={{ color: '#bdbdbd', marginLeft: 6 }}>(disconnected)</span>}
+                    {isCurrentUser && editingName ? (
+                      <input
+                        type="text"
+                        value={nameEditValue}
+                        onChange={handleNameEditChange}
+                        onBlur={handleNameEditBlurOrEnter}
+                        onKeyDown={handleNameEditKeyDown}
+                        style={{
+                          background: '#23272e',
+                          border: '1px solid #444',
+                          borderRadius: '4px',
+                          padding: '2px 6px',
+                          color: user.color,
+                          fontSize: 'inherit',
+                          fontFamily: 'inherit',
+                          width: '100%',
+                        }}
+                        autoFocus
+                      />
+                    ) : (
+                      <>
+                        <span
+                          onDoubleClick={isCurrentUser ? handleNameDoubleClick : undefined}
+                          style={{ cursor: isCurrentUser ? 'text' : 'default' }}
+                        >
+                          {user.name}
+                        </span>
+                        {isCurrentUser && <span style={{ color: '#e0e0e0', marginLeft: 6, fontSize: '0.9em' }}>(me)</span>}
+                        {isDisconnected && <span style={{ color: '#bdbdbd', marginLeft: 6 }}>(disconnected)</span>}
+                      </>
+                    )}
                   </li>
                 );
               })}
