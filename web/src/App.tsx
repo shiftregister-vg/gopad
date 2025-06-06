@@ -466,10 +466,11 @@ function RoomEditor() {
     e.stopPropagation();
     if (tabs.length === 1) return;
     
-    setTabs(prevTabs => prevTabs.filter(tab => tab.id !== tabId));
-    if (activeTabId === tabId) {
-      const remainingTabs = tabs.filter(tab => tab.id !== tabId);
-      setActiveTabId(remainingTabs[remainingTabs.length - 1].id);
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'tabDelete',
+        tabId,
+      }));
     }
   };
 
