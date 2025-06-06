@@ -270,9 +270,11 @@ function RoomEditor() {
   const [renameValue, setRenameValue] = useState('');
 
   const handleInit = (data: FullStateMessage) => {
-    setTabs(data.tabs);
-    setActiveTabId(data.activeTabId);
-    setLanguage(data.language);
+    if (data.tabs && Array.isArray(data.tabs)) {
+      setTabs(data.tabs);
+      setActiveTabId(data.activeTabId || data.tabs[0]?.id || '1');
+    }
+    setLanguage(data.language || 'plaintext');
     setIsInitialized(true);
   };
 
@@ -546,7 +548,7 @@ function RoomEditor() {
           </div>
           <h3>Connected Users</h3>
           <ul>
-            {users && Object.entries(users).map(([uuid, user]) => {
+            {Object.entries(users || {}).map(([uuid, user]) => {
               const isDisconnected = user.disconnected;
               return (
                 <li
@@ -567,7 +569,7 @@ function RoomEditor() {
         <div className="editor-container">
           <div className="editor-header">
             <div className="tab-bar">
-              {tabs.map(tab => (
+              {(tabs || []).map(tab => (
                 <div
                   key={tab.id}
                   className={`tab ${tab.id === activeTabId ? 'active' : ''}`}
@@ -604,7 +606,7 @@ function RoomEditor() {
           <MonacoEditor
             height="calc(100vh - 100px)"
             language={language}
-            value={tabs.find(tab => tab.id === activeTabId)?.content || ''}
+            value={(tabs || []).find(tab => tab.id === activeTabId)?.content || ''}
             onChange={handleEditorChange}
             onMount={handleEditorDidMount}
             theme="vs-dark"
