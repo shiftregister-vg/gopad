@@ -343,8 +343,14 @@ function RoomEditor() {
       setReconnecting(false);
       setIsDisconnected(false);
       reconnectStartTime.current = null;
-      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
-      if (reconnectInterval.current) clearInterval(reconnectInterval.current);
+      if (reconnectTimeout.current) {
+        clearTimeout(reconnectTimeout.current);
+        reconnectTimeout.current = null;
+      }
+      if (reconnectInterval.current) {
+        clearInterval(reconnectInterval.current);
+        reconnectInterval.current = null;
+      }
     }
     let wsHost: string;
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
@@ -360,8 +366,14 @@ function RoomEditor() {
       setReconnecting(false);
       setIsDisconnected(false);
       reconnectStartTime.current = null;
-      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
-      if (reconnectInterval.current) clearInterval(reconnectInterval.current);
+      if (reconnectTimeout.current) {
+        clearTimeout(reconnectTimeout.current);
+        reconnectTimeout.current = null;
+      }
+      if (reconnectInterval.current) {
+        clearInterval(reconnectInterval.current);
+        reconnectInterval.current = null;
+      }
       const uuid = getOrCreateUUID();
       setCurrentUserUuid(uuid);
       ws.send(JSON.stringify({ type: 'setName', uuid, name: name.trim() }));
@@ -370,29 +382,36 @@ function RoomEditor() {
     ws.onclose = (event) => {
       setIsConnected(false);
       setIsInitialized(false);
-      // Only set reconnecting/disconnected on first transition
+      // Only set reconnecting/disconnected and timers on first transition
       if (!reconnecting && !isDisconnected) {
         setReconnecting(true);
         reconnectStartTime.current = Date.now();
-        if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
-        if (reconnectInterval.current) clearInterval(reconnectInterval.current);
-        // Start the 1 minute timer
-        reconnectTimeout.current = setTimeout(() => {
-          setReconnecting(false);
-          setIsDisconnected(true);
-          // Now only try to reconnect every 30 seconds
+        // Only set timers if not already set
+        if (!reconnectTimeout.current) {
+          reconnectTimeout.current = setTimeout(() => {
+            setReconnecting(false);
+            setIsDisconnected(true);
+            // Now only try to reconnect every 30 seconds
+            if (reconnectInterval.current) {
+              clearInterval(reconnectInterval.current);
+              reconnectInterval.current = null;
+            }
+            if (!reconnectInterval.current) {
+              reconnectInterval.current = setInterval(() => {
+                connectWebSocket();
+              }, 30000);
+            }
+          }, 60000);
+        }
+        if (!reconnectInterval.current) {
           reconnectInterval.current = setInterval(() => {
-            connectWebSocket();
-          }, 30000);
-        }, 60000);
-        // Try to reconnect every 2 seconds for the first minute
-        reconnectInterval.current = setInterval(() => {
-          if (!isDisconnected) {
-            connectWebSocket();
-          }
-        }, 2000);
+            if (!isDisconnected) {
+              connectWebSocket();
+            }
+          }, 2000);
+        }
       }
-      // Otherwise, do not change reconnecting/disconnected state
+      // Otherwise, do not change reconnecting/disconnected state or timers
     };
 
     ws.onerror = (event) => {
