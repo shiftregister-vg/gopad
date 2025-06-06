@@ -404,6 +404,13 @@ function RoomEditor() {
 
   const handleEditorChange = (value: string | undefined) => {
     if (!value || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    
+    // Update local state immediately
+    setTabs(prevTabs => prevTabs.map(tab =>
+      tab.id === activeTabId ? { ...tab, content: value } : tab
+    ));
+
+    // Then send to server
     wsRef.current.send(JSON.stringify({
       type: 'update',
       tabId: activeTabId,
@@ -445,6 +452,9 @@ function RoomEditor() {
 
   const handleTabClick = (tabId: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      // Update local state first
+      setActiveTabId(tabId);
+      // Then notify other clients
       wsRef.current.send(JSON.stringify({
         type: 'tabFocus',
         tabId,
@@ -482,6 +492,19 @@ function RoomEditor() {
     }
     setRenamingTabId(null);
   };
+
+  // Add effect to update editor content when active tab changes
+  useEffect(() => {
+    if (editorRef.current) {
+      const activeTab = tabs.find(tab => tab.id === activeTabId);
+      if (activeTab) {
+        const currentContent = editorRef.current.getValue();
+        if (currentContent !== activeTab.content) {
+          editorRef.current.setValue(activeTab.content);
+        }
+      }
+    }
+  }, [activeTabId, tabs]);
 
   if (showNamePrompt) {
     return (
@@ -624,10 +647,11 @@ function RoomEditor() {
           <MonacoEditor
             height="calc(100vh - 100px)"
             language={language}
-            value={(tabs || []).find(tab => tab.id === activeTabId)?.content || ''}
+            value={tabs.find(tab => tab.id === activeTabId)?.content || ''}
             onChange={handleEditorChange}
             onMount={handleEditorDidMount}
             theme="vs-dark"
+            key={activeTabId}
             options={{
               minimap: { enabled: false },
               fontSize: 14,
@@ -636,6 +660,7 @@ function RoomEditor() {
               renderWhitespace: 'selection',
               scrollBeyondLastLine: false,
               automaticLayout: true,
+              trimAutoWhitespace: false,
             }}
           />
         </div>
