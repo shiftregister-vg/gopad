@@ -850,7 +850,8 @@ function RoomEditor() {
           </main>
           <div className="footer">
             <div className="footer-left">
-              <div className={`connection-status ${isConnected ? 'connected' : reconnecting ? 'reconnecting' : 'disconnected'}`}>
+              <div className={`connection-status ${isConnected ? 'connected' : reconnecting ? 'reconnecting' : 'disconnected'}`}
+                title={isConnected ? 'Connected' : reconnecting ? 'Reconnecting…' : 'Disconnected'}>
                 {isConnected ? (
                   // Wifi icon (connected)
                   <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
