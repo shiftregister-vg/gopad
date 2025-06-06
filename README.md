@@ -8,13 +8,13 @@ GoPad is a collaborative text editor built with Go and React. It allows multiple
 - Monaco editor integration (same editor as VS Code)
 - WebSocket-based communication
 - Operational transformation for conflict resolution
-- No database required (in-memory storage)
+- Redis-based distributed state management
+- Multi-server support with consistent state
 
 ## Prerequisites
 
-- Go 1.16 or later
-- Node.js 14 or later
-- npm or yarn
+- [devbox](https://www.jetpack.io/devbox) for development environment management
+- Docker (optional, for production deployment)
 
 ## Installation
 
@@ -24,41 +24,77 @@ git clone https://github.com/shiftregister-vg/gopad.git
 cd gopad
 ```
 
-2. Install Go dependencies:
+2. Install devbox:
 ```bash
-go mod download
+# On macOS:
+brew install jetpack-io/devbox/devbox
+
+# On Linux:
+curl -fsSL https://get.jetpack.io/devbox | bash
 ```
 
-3. Install frontend dependencies:
+3. Start the development environment:
 ```bash
+devbox shell
+```
+
+4. Install dependencies:
+```bash
+# Install Go dependencies
+go mod download
+
+# Install frontend dependencies
 cd web
 npm install
-```
-
-## Running the Application
-
-1. Build the frontend:
-```bash
-cd web
-npm run build
-```
-
-2. Start the Go server:
-```bash
 cd ..
-go run cmd/server/main.go
 ```
-
-The application will be available at http://localhost:3030
 
 ## Development
 
-To run the frontend in development mode with hot reloading:
+The project uses devbox to manage development dependencies and services. When you enter the devbox shell, it automatically:
+- Installs Go, Node.js, and Redis
+- Starts Redis in the background
+- Sets up the development environment
 
+Available devbox scripts:
 ```bash
-cd web
-npm start
+# Start both frontend and backend in development mode
+devbox run dev
+
+# Start only the frontend
+devbox run start:frontend
+
+# Start only the backend
+devbox run start:backend
+
+# Build the frontend
+devbox run build
+
+# Run tests
+devbox run test
+
+# Clean build artifacts
+devbox run clean
 ```
+
+## Configuration
+
+The server can be configured using environment variables:
+
+- `REDIS_URL`: Redis connection URL (default: "redis://localhost:6379/0")
+- `GO_ENV`: Set to "development" for development mode
+
+## Multi-Server Deployment
+
+GoPad supports running multiple server instances behind a load balancer. Each instance will:
+- Share state through Redis
+- Automatically sync updates between instances
+- Maintain consistency across all clients
+
+To deploy multiple instances:
+1. Set up a Redis server
+2. Configure each GoPad instance with the same Redis URL
+3. Set up a load balancer (e.g., Nginx) to distribute traffic
 
 ## How It Works
 
@@ -67,6 +103,7 @@ GoPad uses operational transformation to handle concurrent edits. When multiple 
 1. Each edit is converted into an operation (insert or delete)
 2. Operations are transformed against each other to maintain consistency
 3. The transformed operations are applied to each client's document
+4. State is persisted in Redis and synchronized across all server instances
 
 ## License
 

@@ -1,0 +1,25 @@
+version: "0.5"
+
+processes:
+  redis:
+    command: redis-server
+    environment:
+      - REDIS_PORT=6379
+    ports:
+      - "6379:6379"
+
+  backend:
+    command: air
+    environment:
+      - GO_ENV=development
+      - REDIS_URL=redis://localhost:6379/0
+    depends_on:
+      redis:
+        condition: process_started
+
+  frontend:
+    command: npm start
+    working_dir: web
+    depends_on:
+      backend:
+        condition: process_started 

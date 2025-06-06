@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/shiftregister-vg/gopad/pkg/storage"
 )
 
 var upgrader = websocket.Upgrader{
@@ -75,9 +76,22 @@ type UserListMessage struct {
 
 var (
 	documents = make(map[string]*Document)
+	store     *storage.Storage
 )
 
 func main() {
+	// Initialize Redis storage
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379/0"
+	}
+	var err error
+	store, err = storage.New(redisURL)
+	if err != nil {
+		log.Fatalf("Failed to initialize storage: %v", err)
+	}
+	defer store.Close()
+
 	r := gin.Default()
 
 	// Check if we're in development mode
@@ -164,19 +178,70 @@ func main() {
 func getOrCreateDocument(docID string) *Document {
 	doc, exists := documents[docID]
 	if !exists {
+		// Try to load from storage
+		state, err := store.LoadDocument(docID)
+		if err != nil {
+			log.Printf("Error loading document state: %v", err)
+			state = &storage.DocumentState{
+				Content:      "",
+				Language:     "plaintext",
+				LastModified: time.Now().UnixMilli(),
+				Users:        make(map[string]string),
+				Version:      0,
+			}
+		}
+
 		doc = &Document{
 			ID:           docID,
-			Content:      "",
-			Language:     "plaintext",
+			Content:      state.Content,
+			Language:     state.Language,
 			Users:        make(map[string]*Client),
 			clients:      make(map[*Client]bool),
 			broadcast:    make(chan BroadcastMessage),
 			register:     make(chan *Client),
 			unregister:   make(chan *Client),
-			lastModified: time.Now().UnixMilli(),
+			lastModified: state.LastModified,
 		}
 		documents[docID] = doc
 		go doc.broadcastMessages()
+
+		// Subscribe to Redis updates for this document
+		go func() {
+			err := store.SubscribeToUpdates(docID, func(update *storage.DocumentState) {
+				doc.mu.Lock()
+				// Only apply update if it's newer than our current state
+				if update.Version > doc.lastModified {
+					doc.Content = update.Content
+					doc.Language = update.Language
+					doc.lastModified = update.LastModified
+
+					// Update users
+					for uuid, name := range update.Users {
+						if client, exists := doc.Users[uuid]; exists {
+							client.name = name
+						}
+					}
+					doc.mu.Unlock()
+
+					// Broadcast update to all clients
+					updateMsg := map[string]interface{}{
+						"type":         "update",
+						"content":      update.Content,
+						"language":     update.Language,
+						"lastModified": update.LastModified,
+					}
+					jsonMsg, err := json.Marshal(updateMsg)
+					if err == nil {
+						doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+					}
+				} else {
+					doc.mu.Unlock()
+				}
+			})
+			if err != nil {
+				log.Printf("Error subscribing to updates for doc %s: %v", docID, err)
+			}
+		}()
 	}
 	return doc
 }
@@ -489,12 +554,10 @@ func (doc *Document) broadcastMessages() {
 			client.conn.WriteJSON(initialState)
 			log.Printf("Client registered in doc %s, total clients: %d", doc.ID, len(doc.clients))
 		case client := <-doc.unregister:
-			// Only remove from doc.Users and mark as disconnected, do not close channel here
 			doc.mu.Lock()
 			if client.uuid != "" {
 				client.disconnected = true
 				client.disconnectedAt = time.Now()
-				// Removal from doc.Users after 2 minutes is handled elsewhere
 			}
 			doc.mu.Unlock()
 			log.Printf("Client unregistered in doc %s, total clients: %d", doc.ID, len(doc.clients))
@@ -506,6 +569,14 @@ func (doc *Document) broadcastMessages() {
 					msgType = t
 				}
 			}
+
+			// Save state after certain message types
+			if msgType == "update" || msgType == "language" {
+				if err := doc.saveState(); err != nil {
+					log.Printf("Error saving document state: %v", err)
+				}
+			}
+
 			for client := range doc.clients {
 				if client == bmsg.Sender && msgType == "update" {
 					log.Printf("Skipping sender for update message")
@@ -546,4 +617,21 @@ func (doc *Document) broadcastUserList() {
 		return
 	}
 	doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+}
+
+func (doc *Document) saveState() error {
+	state := &storage.DocumentState{
+		Content:      doc.Content,
+		Language:     doc.Language,
+		LastModified: doc.lastModified,
+		Users:        make(map[string]string),
+	}
+
+	doc.mu.RLock()
+	for uuid, client := range doc.Users {
+		state.Users[uuid] = client.name
+	}
+	doc.mu.RUnlock()
+
+	return store.SaveDocument(doc.ID, state)
 }
