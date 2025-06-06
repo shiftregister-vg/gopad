@@ -3,6 +3,7 @@ version: "0.5"
 processes:
   redis:
     command: redis-server
+    log_location: $DEVBOX_PROJECT_ROOT/.devbox/logs/redis.log
     environment:
       - REDIS_PORT=6379
     ports:
@@ -10,6 +11,7 @@ processes:
 
   backend:
     command: air
+    log_location: $DEVBOX_PROJECT_ROOT/.devbox/logs/backend.log
     environment:
       - GO_ENV=development
       - REDIS_URL=redis://localhost:6379/0
@@ -20,6 +22,7 @@ processes:
   frontend:
     command: npm start
     working_dir: web
+    log_location: $DEVBOX_PROJECT_ROOT/.devbox/logs/frontend.log
     depends_on:
       backend:
         condition: process_started 
