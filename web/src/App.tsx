@@ -311,13 +311,16 @@ function RoomEditor() {
   const [isConnected, setIsConnected] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const [isDisconnected, setIsDisconnected] = useState(false);
   const [copied, setCopied] = useState(false);
   const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
+  const reconnectStartTime = useRef<number | null>(null);
   const [remoteCursors, setRemoteCursors] = useState<{ [uuid: string]: CursorMessage }>({});
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [notesPanelOpen, setNotesPanelOpen] = useState(true);
   const centerPanelRef = useRef<HTMLDivElement>(null);
+  const reconnectInterval = useRef<NodeJS.Timeout | null>(null);
 
   const handleInit = (data: FullStateMessage) => {
     if (data.tabs && Array.isArray(data.tabs)) {
@@ -335,7 +338,14 @@ function RoomEditor() {
 
   const connectWebSocket = React.useCallback(() => {
     if (!roomId || !name.trim()) return;
-    setReconnecting(false);
+    // Only reset reconnecting/disconnected if not already in those states
+    if (!reconnecting && !isDisconnected) {
+      setReconnecting(false);
+      setIsDisconnected(false);
+      reconnectStartTime.current = null;
+      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+      if (reconnectInterval.current) clearInterval(reconnectInterval.current);
+    }
     let wsHost: string;
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       wsHost = `ws://${window.location.hostname}:3030/ws?doc=${roomId}`;
@@ -346,29 +356,47 @@ function RoomEditor() {
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log('WebSocket opened', wsHost);
       setIsConnected(true);
       setReconnecting(false);
+      setIsDisconnected(false);
+      reconnectStartTime.current = null;
       if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+      if (reconnectInterval.current) clearInterval(reconnectInterval.current);
       const uuid = getOrCreateUUID();
       setCurrentUserUuid(uuid);
       ws.send(JSON.stringify({ type: 'setName', uuid, name: name.trim() }));
     };
 
     ws.onclose = (event) => {
-      console.log('WebSocket closed', event);
       setIsConnected(false);
       setIsInitialized(false);
-      setReconnecting(true);
-      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
-      reconnectTimeout.current = setTimeout(() => {
-        console.log('Attempting reconnect...');
-        connectWebSocket();
-      }, 2000);
+      // Only set reconnecting/disconnected on first transition
+      if (!reconnecting && !isDisconnected) {
+        setReconnecting(true);
+        reconnectStartTime.current = Date.now();
+        if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+        if (reconnectInterval.current) clearInterval(reconnectInterval.current);
+        // Start the 1 minute timer
+        reconnectTimeout.current = setTimeout(() => {
+          setReconnecting(false);
+          setIsDisconnected(true);
+          // Now only try to reconnect every 30 seconds
+          reconnectInterval.current = setInterval(() => {
+            connectWebSocket();
+          }, 30000);
+        }, 60000);
+        // Try to reconnect every 2 seconds for the first minute
+        reconnectInterval.current = setInterval(() => {
+          if (!isDisconnected) {
+            connectWebSocket();
+          }
+        }, 2000);
+      }
+      // Otherwise, do not change reconnecting/disconnected state
     };
 
     ws.onerror = (event) => {
-      console.log('WebSocket error', event);
+      // Optionally handle error
     };
 
     ws.onmessage = (event) => {
@@ -427,10 +455,10 @@ function RoomEditor() {
           }
         }
       } catch (e) {
-        console.error('Error processing message:', e);
+        // Optionally handle error
       }
     };
-  }, [roomId, name]);
+  }, [roomId, name, isDisconnected, reconnecting]);
 
   useEffect(() => {
     if (!showNamePrompt && name.trim()) {
@@ -439,6 +467,7 @@ function RoomEditor() {
     return () => {
       if (wsRef.current) wsRef.current.close();
       if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+      if (reconnectInterval.current) clearInterval(reconnectInterval.current);
     };
   }, [connectWebSocket, showNamePrompt, name]);
 
@@ -624,6 +653,10 @@ function RoomEditor() {
       setEditingName(false);
     }
   };
+
+  // Update status logic for rendering
+  const showReconnecting = reconnecting && !isDisconnected;
+  const showDisconnected = isDisconnected;
 
   return (
     <div className="App">
@@ -850,14 +883,14 @@ function RoomEditor() {
           </main>
           <div className="footer">
             <div className="footer-left">
-              <div className={`connection-status ${isConnected ? 'connected' : reconnecting ? 'reconnecting' : 'disconnected'}`}
-                title={isConnected ? 'Connected' : reconnecting ? 'Reconnecting…' : 'Disconnected'}>
+              <div className={`connection-status ${isConnected ? 'connected' : showReconnecting ? 'reconnecting' : showDisconnected ? 'disconnected' : ''}`}
+                title={isConnected ? 'Connected' : showReconnecting ? 'Reconnecting…' : 'Disconnected'}>
                 {isConnected ? (
                   // Wifi icon (connected)
                   <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M12 18c.552 0 1 .448 1 1s-.448 1-1 1-1-.448-1-1 .448-1 1-1zm-4.243-2.828a6 6 0 0 1 8.486 0 1 1 0 0 1-1.414 1.414 4 4 0 0 0-5.657 0 1 1 0 1 1-1.415-1.414zm-2.828-2.829a10 10 0 0 1 14.142 0 1 1 0 1 1-1.415 1.415 8 8 0 0 0-11.313 0 1 1 0 1 1-1.414-1.415zm-2.829-2.829a14 14 0 0 1 19.798 0 1 1 0 1 1-1.415 1.415 12 12 0 0 0-16.97 0 1 1 0 1 1-1.414-1.415z" fill="currentColor"/>
                   </svg>
-                ) : reconnecting ? (
+                ) : showReconnecting ? (
                   // Sync/refresh icon (reconnecting)
                   <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z" fill="currentColor"/>
