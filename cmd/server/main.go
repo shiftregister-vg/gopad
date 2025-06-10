@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -848,7 +849,7 @@ func (doc *Document) saveState() error {
 	return store.SaveDocument(doc.ID, state)
 }
 
-// getNextAvailableColor returns the next available color from the palette that isn't used in this document
+// getNextAvailableColor returns a random available color from the palette that isn't used in this document
 // Note: Caller must hold doc.mu.Lock()
 func (doc *Document) getNextAvailableColor() string {
 	log.Printf("getNextAvailableColor: current used colors: %v", doc.usedColors)
@@ -863,27 +864,32 @@ func (doc *Document) getNextAvailableColor() string {
 	}
 	log.Printf("getNextAvailableColor: active colors: %v", activeColors)
 
-	// Find the first unused color
-	log.Printf("getNextAvailableColor: checking colors")
+	// Create a slice of available colors
+	var availableColors []string
 	for _, color := range colorPalette {
-		log.Printf("getNextAvailableColor: checking color %v", color)
 		if !activeColors[color] {
-			doc.usedColors[color] = true
-			log.Printf("getNextAvailableColor: found next color %v", color)
-			return color
+			availableColors = append(availableColors, color)
 		}
 	}
 
-	// If all colors are used, start reusing from the beginning
-	// This is a fallback that should rarely happen
-	log.Printf("getNextAvailableColor: all colors used, reusing from beginning")
-	for _, color := range colorPalette {
-		doc.usedColors[color] = true
-		log.Printf("getNextAvailableColor: reusing color %v", color)
-		return color
+	// If we have available colors, randomly select one
+	if len(availableColors) > 0 {
+		selectedColor := availableColors[rand.Intn(len(availableColors))]
+		doc.usedColors[selectedColor] = true
+		log.Printf("getNextAvailableColor: randomly selected color %v", selectedColor)
+		return selectedColor
 	}
 
-	// This should never happen as colorPalette is non-empty
-	log.Printf("getNextAvailableColor: all colors used, returning first color")
-	return colorPalette[0]
+	// If all colors are used, randomly select from all colors
+	// This is a fallback that should rarely happen
+	log.Printf("getNextAvailableColor: all colors used, randomly selecting from all colors")
+	selectedColor := colorPalette[rand.Intn(len(colorPalette))]
+	doc.usedColors[selectedColor] = true
+	log.Printf("getNextAvailableColor: randomly selected reused color %v", selectedColor)
+	return selectedColor
+}
+
+func init() {
+	// Initialize random seed
+	rand.Seed(time.Now().UnixNano())
 }
