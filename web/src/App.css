@@ -466,7 +466,7 @@ textarea:disabled {
 }
 
 .tab-notes {
-  background: #1e1e1e;
+  background: none;
   border: none;
   border-radius: 0;
   padding: 0;
@@ -720,8 +720,7 @@ textarea:disabled {
 
 .notes-panel {
   width: 340px;
-  background: #1e1e1e;
-  border-left: 2px solid #333;
+  background: #181a1b;
   height: 100%;
   transition: width 0.2s;
   position: relative;
@@ -849,6 +848,7 @@ textarea:disabled {
   flex-direction: column;
   min-width: 0;
   height: 100%;
+  background: #1e1e1e;
 }
 
 .add-notes-icon {
