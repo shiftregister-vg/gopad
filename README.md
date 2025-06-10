@@ -81,6 +81,46 @@ To deploy multiple instances:
 2. Configure each GoPad instance with the same Redis URL
 3. Set up a load balancer (e.g., Nginx) to distribute traffic
 
+## Docker Deployment
+
+GoPad can be deployed using Docker. The application is containerized with both frontend and backend services, while Redis should be run separately.
+
+### Building the Docker Image
+
+```bash
+# Build the Docker image
+docker build -t gopad .
+```
+
+### Running the Container
+
+```bash
+# Basic run with default settings
+docker run -p 8080:8080 gopad
+
+# Run with custom Redis configuration
+docker run -p 8080:8080 \
+  -e REDIS_URL="redis://your-redis-host:6379/0" \
+  -e PORT="8080" \
+  gopad
+```
+
+### Environment Variables
+
+The following environment variables can be configured:
+
+- `REDIS_URL`: Redis connection URL (default: "redis://localhost:6379/0")
+- `PORT`: Port to expose the application on (default: "8080")
+- `GO_ENV`: Environment mode (default: "production")
+
+### Production Deployment
+
+For production deployment, it's recommended to:
+1. Use a managed Redis service or run Redis in a separate container
+2. Set up a reverse proxy (e.g., Nginx) in front of the container
+3. Use Docker Compose or Kubernetes for orchestration
+4. Configure proper SSL/TLS termination
+
 ## How It Works
 
 GoPad uses operational transformation to handle concurrent edits. When multiple users edit the same document:
