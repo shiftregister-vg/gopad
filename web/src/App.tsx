@@ -1121,6 +1121,7 @@ function RoomEditor() {
                           type="text"
                           value={renameValue}
                           autoFocus
+                          onFocus={(e) => e.target.select()}
                           onChange={handleRenameChange}
                           onBlur={() => handleRenameBlurOrEnter(tab.id)}
                           onKeyDown={e => {
