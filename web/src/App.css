@@ -414,7 +414,7 @@ textarea:disabled {
 
 .editor-controls select {
   background: #2d2d2d;
-  border: 1px solid #444;
+  border: 1px solid #2e2e2e;
   color: #e0e0e0;
   padding: 4px 8px;
   border-radius: 4px;
@@ -902,4 +902,14 @@ textarea:disabled {
   display: flex;
   align-items: center;
   height: 100%;
+}
+
+button {
+  background: #2d2d2d;
+  border: 1px solid #2e2e2e;
+}
+
+select {
+  background: #2d2d2d;
+  border: 1px solid #2e2e2e;
 } 
