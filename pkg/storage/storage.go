@@ -81,6 +81,8 @@ func (s *Storage) SaveDocument(docID string, state *DocumentState) error {
 	pipe := s.client.Pipeline()
 	pipe.HSet(s.ctx, fmt.Sprintf("doc:%s", docID), "data", data)
 	pipe.Publish(s.ctx, fmt.Sprintf("doc:%s:updates", docID), data)
+	// Set 7-day expiration
+	pipe.Expire(s.ctx, fmt.Sprintf("doc:%s", docID), 7*24*time.Hour)
 	_, err = pipe.Exec(s.ctx)
 	if err != nil {
 		return fmt.Errorf("failed to save document state: %w", err)
