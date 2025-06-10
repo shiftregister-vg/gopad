@@ -341,26 +341,28 @@ textarea:disabled {
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background: #1e1e1e;
-  border: 1px solid #2e2e2e;
+  background: #181a1b;
+  border: 1px solid #23272e;
   border-bottom: none;
   border-radius: 4px 4px 0 0;
   cursor: pointer;
   user-select: none;
   min-width: 120px;
   max-width: 200px;
-  color: #e0e0e0;
-  transition: background-color 0.2s;
+  color: #646464;
+  transition: background-color 0.2s, border-color 0.2s;
 }
 
 .tab:hover {
-  background: #2d2d2d;
+  background: #23272e;
 }
 
 .tab.active {
-  background: #363636;
-  border-bottom: 1px solid #23272e;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  border-bottom: none;
   margin-bottom: -1px;
+  z-index: 2;
 }
 
 .tab span {
@@ -368,7 +370,6 @@ textarea:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #e0e0e0;
 }
 
 .tab-close {
@@ -381,6 +382,11 @@ textarea:disabled {
   line-height: 1;
   border-radius: 3px;
   transition: all 0.2s;
+  visibility: hidden;
+}
+
+.tab.active .tab-close {
+  visibility: visible;
 }
 
 .tab-close:hover {
