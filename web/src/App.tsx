@@ -546,6 +546,65 @@ function RoomEditor() {
   const handleEditorChange = (value: string | undefined) => {
     if (!value || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     
+    const oldValue = tabs.find(tab => tab.id === activeTabId)?.content || '';
+    const newValue = value;
+
+    // Calculate the change position and length
+    let changeStart = 0;
+    let changeEnd = 0;
+    let changeLength = 0;
+
+    // Find the first position where the content differs
+    while (changeStart < oldValue.length && changeStart < newValue.length && oldValue[changeStart] === newValue[changeStart]) {
+      changeStart++;
+    }
+
+    // Find the last position where the content differs
+    let oldEnd = oldValue.length - 1;
+    let newEnd = newValue.length - 1;
+    while (oldEnd >= changeStart && newEnd >= changeStart && oldValue[oldEnd] === newValue[newEnd]) {
+      oldEnd--;
+      newEnd--;
+    }
+
+    // Calculate the change length
+    changeLength = newEnd - changeStart + 1;
+    changeEnd = oldEnd + 1;
+
+    // Transform remote cursor positions
+    const transformedCursors = Object.entries(remoteCursors).reduce((acc, [uuid, cursor]) => {
+      if (uuid === currentUserUuid) {
+        acc[uuid] = cursor;
+        return acc;
+      }
+
+      let newPosition = cursor.position;
+      let newSelection = cursor.selection;
+
+      // If cursor is after the change, adjust its position
+      if (cursor.position > changeStart) {
+        const offset = changeLength - (changeEnd - changeStart);
+        newPosition = cursor.position + offset;
+      }
+
+      // If there's a selection, transform it too
+      if (cursor.selection) {
+        newSelection = {
+          start: cursor.selection.start > changeStart ? cursor.selection.start + (changeLength - (changeEnd - changeStart)) : cursor.selection.start,
+          end: cursor.selection.end > changeStart ? cursor.selection.end + (changeLength - (changeEnd - changeStart)) : cursor.selection.end
+        };
+      }
+
+      acc[uuid] = {
+        ...cursor,
+        position: newPosition,
+        selection: newSelection
+      };
+      return acc;
+    }, {} as typeof remoteCursors);
+
+    setRemoteCursors(transformedCursors);
+    
     // Update local state immediately
     setTabs(prevTabs => prevTabs.map(tab =>
       tab.id === activeTabId ? { ...tab, content: value } : tab
@@ -747,7 +806,6 @@ function RoomEditor() {
           ),
           options: {
             className: `remote-cursor remote-cursor-${uuid}`,
-            hoverMessage: { value: user.name },
             glyphMarginClassName: `remote-cursor-label-${uuid}`,
             glyphMarginHoverMessage: { value: user.name },
           }
