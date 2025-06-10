@@ -51,6 +51,7 @@ type Document struct {
 	waitingForState []*Client // clients waiting for state
 	Tabs            []Tab
 	ActiveTabId     string
+	usedColors      map[string]bool // Track used colors in this document
 }
 
 type Tab struct {
@@ -235,6 +236,7 @@ func getOrCreateDocument(docID string) *Document {
 			lastModified: state.LastModified,
 			Tabs:         make([]Tab, len(state.Tabs)),
 			ActiveTabId:  state.ActiveTabId,
+			usedColors:   make(map[string]bool),
 		}
 		// Convert storage.Tabs to Document.Tabs
 		for i, t := range state.Tabs {
@@ -364,6 +366,19 @@ func (c *Client) readPump() {
 		if c.uuid != "" {
 			c.disconnected = true
 			c.disconnectedAt = time.Now()
+			// Remove the color from used colors if this is the last client using it
+			if c.color != "" {
+				stillInUse := false
+				for _, otherClient := range c.doc.Users {
+					if otherClient != c && otherClient.color == c.color {
+						stillInUse = true
+						break
+					}
+				}
+				if !stillInUse {
+					delete(c.doc.usedColors, c.color)
+				}
+			}
 		}
 		c.doc.mu.Unlock()
 		c.doc.broadcastUserList()
@@ -423,10 +438,9 @@ func (c *Client) readPump() {
 					}
 					c.name = name
 					if c.color == "" {
-						colorMu.Lock()
-						c.color = colorPalette[colorIndex%len(colorPalette)]
-						colorIndex++
-						colorMu.Unlock()
+						// Get a new color for this client
+						c.color = c.doc.getNextAvailableColor()
+						log.Printf("Assigned color %v to user %v", c.color, name)
 					}
 					c.disconnected = false
 					c.disconnectedAt = time.Time{}
@@ -732,6 +746,19 @@ func (doc *Document) broadcastMessages() {
 			if client.uuid != "" {
 				client.disconnected = true
 				client.disconnectedAt = time.Now()
+				// Remove the color from used colors if this is the last client using it
+				if client.color != "" {
+					stillInUse := false
+					for _, otherClient := range doc.Users {
+						if otherClient != client && otherClient.color == client.color {
+							stillInUse = true
+							break
+						}
+					}
+					if !stillInUse {
+						delete(doc.usedColors, client.color)
+					}
+				}
 			}
 			doc.mu.Unlock()
 			log.Printf("Client unregistered in doc %s, total clients: %d", doc.ID, len(doc.clients))
@@ -819,4 +846,44 @@ func (doc *Document) saveState() error {
 	doc.mu.RUnlock()
 
 	return store.SaveDocument(doc.ID, state)
+}
+
+// getNextAvailableColor returns the next available color from the palette that isn't used in this document
+// Note: Caller must hold doc.mu.Lock()
+func (doc *Document) getNextAvailableColor() string {
+	log.Printf("getNextAvailableColor: current used colors: %v", doc.usedColors)
+	log.Printf("getNextAvailableColor: current users: %v", doc.Users)
+
+	// First, check which colors are actually in use by active users
+	activeColors := make(map[string]bool)
+	for _, client := range doc.Users {
+		if client.color != "" {
+			activeColors[client.color] = true
+		}
+	}
+	log.Printf("getNextAvailableColor: active colors: %v", activeColors)
+
+	// Find the first unused color
+	log.Printf("getNextAvailableColor: checking colors")
+	for _, color := range colorPalette {
+		log.Printf("getNextAvailableColor: checking color %v", color)
+		if !activeColors[color] {
+			doc.usedColors[color] = true
+			log.Printf("getNextAvailableColor: found next color %v", color)
+			return color
+		}
+	}
+
+	// If all colors are used, start reusing from the beginning
+	// This is a fallback that should rarely happen
+	log.Printf("getNextAvailableColor: all colors used, reusing from beginning")
+	for _, color := range colorPalette {
+		doc.usedColors[color] = true
+		log.Printf("getNextAvailableColor: reusing color %v", color)
+		return color
+	}
+
+	// This should never happen as colorPalette is non-empty
+	log.Printf("getNextAvailableColor: all colors used, returning first color")
+	return colorPalette[0]
 }
