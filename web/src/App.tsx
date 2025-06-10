@@ -94,6 +94,10 @@ interface CursorMessage {
   name: string;
   color: string;
   position: number;
+  selection?: {
+    start: number;
+    end: number;
+  };
 }
 
 interface UserListMessage {
@@ -500,6 +504,43 @@ function RoomEditor() {
 
   const handleEditorDidMount: OnMount = (editor) => {
     editorRef.current = editor;
+
+    // Add cursor position change listener
+    editor.onDidChangeCursorPosition((e) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      
+      const position = editor.getModel()?.getOffsetAt(e.position) || 0;
+      wsRef.current.send(JSON.stringify({
+        type: 'cursor',
+        uuid: currentUserUuid,
+        name: name,
+        color: users[currentUserUuid]?.color || '#e57373',
+        position: position,
+      }));
+    });
+
+    // Add selection change listener
+    editor.onDidChangeCursorSelection((e) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      
+      const model = editor.getModel();
+      if (!model) return;
+
+      const startPosition = model.getOffsetAt(e.selection.getStartPosition());
+      const endPosition = model.getOffsetAt(e.selection.getEndPosition());
+      
+      wsRef.current.send(JSON.stringify({
+        type: 'cursor',
+        uuid: currentUserUuid,
+        name: name,
+        color: users[currentUserUuid]?.color || '#e57373',
+        position: endPosition,
+        selection: {
+          start: startPosition,
+          end: endPosition
+        }
+      }));
+    });
   };
 
   const handleEditorChange = (value: string | undefined) => {
@@ -676,6 +717,72 @@ function RoomEditor() {
   // Update status logic for rendering
   const showReconnecting = reconnecting && !isDisconnected;
   const showDisconnected = isDisconnected;
+
+  // Add effect to update remote cursors
+  useEffect(() => {
+    if (!editorRef.current) return;
+
+    const decorations = Object.entries(remoteCursors)
+      .map(([uuid, cursor]): monaco.editor.IModelDeltaDecoration[] => {
+        if (uuid === currentUserUuid) return [];
+
+        const model = editorRef.current?.getModel();
+        if (!model) return [];
+
+        const position = model.getPositionAt(cursor.position);
+        if (!position) return [];
+
+        const user = users[uuid];
+        if (!user) return [];
+
+        // Inject cursor styles if not already present
+        injectCursorStyles(uuid, user.color);
+
+        const decoration: monaco.editor.IModelDeltaDecoration = {
+          range: new monaco.Range(
+            position.lineNumber,
+            position.column,
+            position.lineNumber,
+            position.column
+          ),
+          options: {
+            className: `remote-cursor remote-cursor-${uuid}`,
+            hoverMessage: { value: user.name },
+            glyphMarginClassName: `remote-cursor-label-${uuid}`,
+            glyphMarginHoverMessage: { value: user.name },
+          }
+        };
+
+        // Add selection decoration if present
+        if (cursor.selection) {
+          const startPosition = model.getPositionAt(cursor.selection.start);
+          const endPosition = model.getPositionAt(cursor.selection.end);
+          if (startPosition && endPosition) {
+            const selectionDecoration: monaco.editor.IModelDeltaDecoration = {
+              range: new monaco.Range(
+                startPosition.lineNumber,
+                startPosition.column,
+                endPosition.lineNumber,
+                endPosition.column
+              ),
+              options: {
+                className: `remote-selection remote-selection-${uuid}`,
+                hoverMessage: { value: user.name },
+              }
+            };
+            return [decoration, selectionDecoration];
+          }
+        }
+
+        return [decoration];
+      })
+      .flat();
+
+    decorationsRef.current = editorRef.current.deltaDecorations(
+      decorationsRef.current,
+      decorations
+    );
+  }, [remoteCursors, users, currentUserUuid]);
 
   return (
     <div className="App">
