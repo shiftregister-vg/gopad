@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/shiftregister-vg/gopad/pkg/logger"
+
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/shiftregister-vg/gopad/pkg/storage"
@@ -90,6 +92,13 @@ var (
 )
 
 func main() {
+	// Initialize logger with LOG_LEVEL environment variable
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "INFO"
+	}
+	logger.Init(logLevel)
+
 	// Initialize Redis storage
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL == "" {
@@ -98,7 +107,7 @@ func main() {
 	var err error
 	store, err = storage.New(redisURL)
 	if err != nil {
-		log.Fatalf("Failed to initialize storage: %v", err)
+		logger.Fatal("Failed to initialize storage", "error", err)
 	}
 	defer store.Close()
 
@@ -112,12 +121,12 @@ func main() {
 		r.Use(func(c *gin.Context) {
 			if strings.ToLower(c.Request.Header.Get("Upgrade")) == "websocket" || c.Request.URL.Path == "/ws" {
 				if c.Request.URL.Path == "/ws" {
-					log.Println("WebSocket request correctly handled by backend:", c.Request.URL.Path)
+					logger.Debug("WebSocket request handled", "path", c.Request.URL.Path)
 				}
 				c.Next()
 				return
 			}
-			log.Println("Proxying request to React dev server:", c.Request.URL.Path)
+			logger.Debug("Proxying request to React dev server", "path", c.Request.URL.Path)
 			// Proxy to React dev server
 			proxy := &http.Client{
 				Timeout: 10 * time.Second,
@@ -316,7 +325,7 @@ func handleWebSocket(c *gin.Context) {
 	if docID == "" {
 		docID = "default"
 	}
-	log.Printf("New client connected to document: %s", docID)
+	logger.Debug("New client connected to document", "doc_id", docID)
 	doc := getOrCreateDocument(docID)
 	client := &Client{
 		conn:  conn,
@@ -340,19 +349,20 @@ func handleWebSocket(c *gin.Context) {
 		// Send initial document state to the new client
 		initialState := map[string]interface{}{
 			"type":         "init",
+			"content":      doc.Content,
 			"tabs":         doc.Tabs,
 			"activeTabId":  doc.ActiveTabId,
 			"language":     doc.Language,
-			"users":        doc.Users,
 			"lastModified": doc.lastModified,
+			"users":        doc.Users,
 		}
-		doc.mu.Unlock()
-		log.Printf("Sending initial state to client: %+v", initialState)
+		logger.Debug("Sending initial state to client", "state", initialState)
 		if err := conn.WriteJSON(initialState); err != nil {
 			log.Printf("error sending initial state: %v", err)
 			conn.Close()
 			return
 		}
+		doc.mu.Unlock()
 	}
 	doc.register <- client
 	// Start goroutines for reading and writing
@@ -407,290 +417,296 @@ func (c *Client) readPump() {
 	for {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
-			log.Printf("WebSocket read error for doc %s: %v", c.docID, err)
+			logger.Debug("WebSocket read error for doc %s: %v", c.docID, err)
 			break
 		}
-		log.Printf("Received message from client: %s", string(message))
-		// Try to parse the message as JSON
-		var jsonMsg map[string]interface{}
-		if err := json.Unmarshal(message, &jsonMsg); err != nil {
-			log.Printf("Error parsing message as JSON: %v", err)
+		logger.Debug("Received message from client", "doc_id", c.docID, "message", string(message))
+		// Parse the message
+		var msg map[string]interface{}
+		if err := json.Unmarshal(message, &msg); err != nil {
+			logger.Debug("Error parsing message as JSON", "error", err)
 			continue
 		}
+		logger.Debug("Received message from client", "message", string(message))
+
 		// Handle different message types
-		if msgType, ok := jsonMsg["type"].(string); ok {
-			switch msgType {
-			case "setName":
-				if name, ok := jsonMsg["name"].(string); ok {
-					uuid, _ := jsonMsg["uuid"].(string)
-					c.doc.mu.Lock()
-					c.uuid = uuid
-					oldClient, exists := c.doc.Users[uuid]
-					if exists && oldClient != c {
-						// If old client is disconnected, replace with new client
-						if oldClient.disconnected {
-							c.color = oldClient.color
-						}
-						// Remove old client from clients map and close its send channel
-						if _, ok := c.doc.clients[oldClient]; ok {
-							delete(c.doc.clients, oldClient)
-							close(oldClient.send)
-						}
-					}
-					c.name = name
-					if c.color == "" {
-						// Get a new color for this client
-						c.color = c.doc.getNextAvailableColor()
-						log.Printf("Assigned color %v to user %v", c.color, name)
-					}
-					c.disconnected = false
-					c.disconnectedAt = time.Time{}
-					c.doc.Users[uuid] = c
-					c.doc.mu.Unlock()
-					c.doc.broadcastUserList()
-				}
-			case "setLanguage":
-				if lang, ok := jsonMsg["language"].(string); ok {
-					c.doc.mu.Lock()
-					c.doc.Language = lang
-					c.doc.mu.Unlock()
-					langMsg := map[string]interface{}{
-						"type":     "language",
-						"language": lang,
-					}
-					jsonMsg, err := json.Marshal(langMsg)
-					if err != nil {
-						log.Printf("Error marshaling language message: %v", err)
-						continue
-					}
-					c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
-				}
-			case "language":
-				if lang, ok := jsonMsg["language"].(string); ok {
-					c.doc.mu.Lock()
-					c.doc.Language = lang
-					c.doc.mu.Unlock()
-					langMsg := map[string]interface{}{
-						"type":     "language",
-						"language": lang,
-					}
-					jsonMsg, err := json.Marshal(langMsg)
-					if err != nil {
-						log.Printf("Error marshaling language message: %v", err)
-						continue
-					}
-					c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
-				}
-			case "update":
-				if tabId, ok := jsonMsg["tabId"].(string); ok {
-					if content, ok := jsonMsg["content"].(string); ok {
-						c.doc.mu.Lock()
-						// Update the tab content
-						for i, tab := range c.doc.Tabs {
-							if tab.ID == tabId {
-								c.doc.Tabs[i].Content = content
-								break
-							}
-						}
-						c.doc.mu.Unlock()
+		msgType, ok := msg["type"].(string)
+		if !ok {
+			logger.Debug("Message missing type field")
+			continue
+		}
 
-						broadcastMsg := map[string]interface{}{
-							"type":    "update",
-							"tabId":   tabId,
-							"content": content,
-						}
-						jsonMsg, err := json.Marshal(broadcastMsg)
-						if err != nil {
-							log.Printf("Error marshaling broadcast message: %v", err)
-							continue
-						}
-						c.doc.broadcast <- BroadcastMessage{Sender: c, Message: jsonMsg}
-
-						// Save state after update
-						if err := c.doc.saveState(); err != nil {
-							log.Printf("Error saving document state: %v", err)
-						}
+		switch msgType {
+		case "setName":
+			if name, ok := msg["name"].(string); ok {
+				uuid, _ := msg["uuid"].(string)
+				c.doc.mu.Lock()
+				c.uuid = uuid
+				oldClient, exists := c.doc.Users[uuid]
+				if exists && oldClient != c {
+					// If old client is disconnected, replace with new client
+					if oldClient.disconnected {
+						c.color = oldClient.color
+					}
+					// Remove old client from clients map and close its send channel
+					if _, ok := c.doc.clients[oldClient]; ok {
+						delete(c.doc.clients, oldClient)
+						close(oldClient.send)
 					}
 				}
-			case "cursor":
-				// Broadcast cursor/selection update to all other clients
-				c.doc.broadcast <- BroadcastMessage{Sender: c, Message: message}
-			case "tabCreate":
-				if tab, ok := jsonMsg["tab"].(map[string]interface{}); ok {
-					c.doc.mu.Lock()
-					newTab := Tab{
-						ID:      tab["id"].(string),
-						Name:    tab["name"].(string),
-						Content: tab["content"].(string),
-						Notes:   tab["notes"].(string),
-					}
-					c.doc.Tabs = append(c.doc.Tabs, newTab)
-					c.doc.mu.Unlock()
-
-					msg := map[string]interface{}{
-						"type": "tabCreate",
-						"tab":  newTab,
-					}
-					jsonMsg, err := json.Marshal(msg)
-					if err != nil {
-						log.Printf("Error marshaling tabCreate message: %v", err)
-						continue
-					}
-					c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
-
-					// Also broadcast tabFocus for the new tab
-					focusMsg := map[string]interface{}{
-						"type":  "tabFocus",
-						"tabId": newTab.ID,
-					}
-					focusJson, err := json.Marshal(focusMsg)
-					if err == nil {
-						c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: focusJson}
-					}
-
-					// Save state after creating tab
-					if err := c.doc.saveState(); err != nil {
-						log.Printf("Error saving document state: %v", err)
-					}
+				c.name = name
+				if c.color == "" {
+					// Get a new color for this client
+					c.color = c.doc.getNextAvailableColor()
+					logger.Debug("Assigned color to user", "color", c.color, "name", name)
 				}
-			case "tabDelete":
-				if tabId, ok := jsonMsg["tabId"].(string); ok {
+				c.disconnected = false
+				c.disconnectedAt = time.Time{}
+				c.doc.Users[uuid] = c
+				c.doc.mu.Unlock()
+				c.doc.broadcastUserList()
+			}
+		case "setLanguage":
+			if lang, ok := msg["language"].(string); ok {
+				c.doc.mu.Lock()
+				c.doc.Language = lang
+				c.doc.mu.Unlock()
+				langMsg := map[string]interface{}{
+					"type":     "language",
+					"language": lang,
+				}
+				jsonMsg, err := json.Marshal(langMsg)
+				if err != nil {
+					logger.Debug("Error marshaling language message", "error", err)
+					continue
+				}
+				c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+			}
+		case "language":
+			if lang, ok := msg["language"].(string); ok {
+				c.doc.mu.Lock()
+				c.doc.Language = lang
+				c.doc.mu.Unlock()
+				langMsg := map[string]interface{}{
+					"type":     "language",
+					"language": lang,
+				}
+				jsonMsg, err := json.Marshal(langMsg)
+				if err != nil {
+					logger.Debug("Error marshaling language message", "error", err)
+					continue
+				}
+				c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+			}
+		case "update":
+			if tabId, ok := msg["tabId"].(string); ok {
+				if content, ok := msg["content"].(string); ok {
 					c.doc.mu.Lock()
-					// Find and remove the tab
+					// Update the tab content
 					for i, tab := range c.doc.Tabs {
 						if tab.ID == tabId {
-							c.doc.Tabs = append(c.doc.Tabs[:i], c.doc.Tabs[i+1:]...)
+							c.doc.Tabs[i].Content = content
 							break
 						}
 					}
-					// If we deleted the active tab, set active tab to the first tab
-					if c.doc.ActiveTabId == tabId {
-						if len(c.doc.Tabs) > 0 {
-							c.doc.ActiveTabId = c.doc.Tabs[0].ID
-						}
-					}
-					c.doc.ensureMinimumTabs() // Ensure we still have at least one tab
 					c.doc.mu.Unlock()
 
-					// Broadcast the updated tab list and active tab
+					broadcastMsg := map[string]interface{}{
+						"type":    "update",
+						"tabId":   tabId,
+						"content": content,
+					}
+					jsonMsg, err := json.Marshal(broadcastMsg)
+					if err != nil {
+						logger.Debug("Error marshaling update message", "error", err)
+						continue
+					}
+					c.doc.broadcast <- BroadcastMessage{Sender: c, Message: jsonMsg}
+
+					// Save state after update
+					if err := c.doc.saveState(); err != nil {
+						logger.Error("Error saving document state", "error", err)
+					}
+				}
+			}
+		case "cursor":
+			// Broadcast cursor/selection update to all other clients
+			c.doc.broadcast <- BroadcastMessage{Sender: c, Message: message}
+		case "tabCreate":
+			if tab, ok := msg["tab"].(map[string]interface{}); ok {
+				c.doc.mu.Lock()
+				newTab := Tab{
+					ID:      tab["id"].(string),
+					Name:    tab["name"].(string),
+					Content: tab["content"].(string),
+					Notes:   tab["notes"].(string),
+				}
+				c.doc.Tabs = append(c.doc.Tabs, newTab)
+				c.doc.mu.Unlock()
+
+				msg := map[string]interface{}{
+					"type": "tabCreate",
+					"tab":  newTab,
+				}
+				jsonMsg, err := json.Marshal(msg)
+				if err != nil {
+					logger.Debug("Error marshaling tabCreate message", "error", err)
+					continue
+				}
+				c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+
+				// Also broadcast tabFocus for the new tab
+				focusMsg := map[string]interface{}{
+					"type":  "tabFocus",
+					"tabId": newTab.ID,
+				}
+				focusJson, err := json.Marshal(focusMsg)
+				if err == nil {
+					c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: focusJson}
+				}
+
+				// Save state after creating tab
+				if err := c.doc.saveState(); err != nil {
+					logger.Error("Error saving document state", "error", err)
+				}
+			}
+		case "tabDelete":
+			if tabId, ok := msg["tabId"].(string); ok {
+				c.doc.mu.Lock()
+				// Find and remove the tab
+				for i, tab := range c.doc.Tabs {
+					if tab.ID == tabId {
+						c.doc.Tabs = append(c.doc.Tabs[:i], c.doc.Tabs[i+1:]...)
+						break
+					}
+				}
+				// If we deleted the active tab, set active tab to the first tab
+				if c.doc.ActiveTabId == tabId {
+					if len(c.doc.Tabs) > 0 {
+						c.doc.ActiveTabId = c.doc.Tabs[0].ID
+					}
+				}
+				c.doc.ensureMinimumTabs() // Ensure we still have at least one tab
+				c.doc.mu.Unlock()
+
+				// Broadcast the updated tab list and active tab
+				updateMsg := map[string]interface{}{
+					"type":        "tabUpdate",
+					"tabs":        c.doc.Tabs,
+					"activeTabId": c.doc.ActiveTabId,
+				}
+				jsonMsg, err := json.Marshal(updateMsg)
+				if err == nil {
+					c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+				}
+
+				// Save state after deleting tab
+				if err := c.doc.saveState(); err != nil {
+					logger.Error("Error saving document state", "error", err)
+				}
+			}
+		case "tabFocus":
+			if tabId, ok := msg["tabId"].(string); ok {
+				c.doc.mu.Lock()
+				c.doc.ActiveTabId = tabId
+				c.doc.mu.Unlock()
+
+				msg := map[string]interface{}{
+					"type":  "tabFocus",
+					"tabId": tabId,
+				}
+				jsonMsg, err := json.Marshal(msg)
+				if err != nil {
+					logger.Debug("Error marshaling tabFocus message", "error", err)
+					continue
+				}
+				c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
+
+				// Save state after changing active tab
+				if err := c.doc.saveState(); err != nil {
+					logger.Error("Error saving document state", "error", err)
+				}
+			}
+		case "tabRename":
+			if tabId, ok := msg["tabId"].(string); ok {
+				if name, ok := msg["name"].(string); ok {
+					c.doc.mu.Lock()
+					// Update the tab name
+					for i, tab := range c.doc.Tabs {
+						if tab.ID == tabId {
+							c.doc.Tabs[i].Name = name
+							break
+						}
+					}
+					c.doc.mu.Unlock()
+
+					// Send a tabUpdate message with the complete tab state
 					updateMsg := map[string]interface{}{
 						"type":        "tabUpdate",
 						"tabs":        c.doc.Tabs,
 						"activeTabId": c.doc.ActiveTabId,
 					}
 					jsonMsg, err := json.Marshal(updateMsg)
-					if err == nil {
-						c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
-					}
-
-					// Save state after deleting tab
-					if err := c.doc.saveState(); err != nil {
-						log.Printf("Error saving document state: %v", err)
-					}
-				}
-			case "tabFocus":
-				if tabId, ok := jsonMsg["tabId"].(string); ok {
-					c.doc.mu.Lock()
-					c.doc.ActiveTabId = tabId
-					c.doc.mu.Unlock()
-
-					msg := map[string]interface{}{
-						"type":  "tabFocus",
-						"tabId": tabId,
-					}
-					jsonMsg, err := json.Marshal(msg)
 					if err != nil {
-						log.Printf("Error marshaling tabFocus message: %v", err)
+						logger.Debug("Error marshaling tabUpdate message", "error", err)
 						continue
 					}
 					c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
 
-					// Save state after changing active tab
+					// Save state after renaming tab
 					if err := c.doc.saveState(); err != nil {
-						log.Printf("Error saving document state: %v", err)
+						logger.Error("Error saving document state", "error", err)
 					}
 				}
-			case "tabRename":
-				if tabId, ok := jsonMsg["tabId"].(string); ok {
-					if name, ok := jsonMsg["name"].(string); ok {
-						c.doc.mu.Lock()
-						// Update the tab name
-						for i, tab := range c.doc.Tabs {
-							if tab.ID == tabId {
-								c.doc.Tabs[i].Name = name
-								break
-							}
-						}
-						c.doc.mu.Unlock()
-
-						// Send a tabUpdate message with the complete tab state
-						updateMsg := map[string]interface{}{
-							"type":        "tabUpdate",
-							"tabs":        c.doc.Tabs,
-							"activeTabId": c.doc.ActiveTabId,
-						}
-						jsonMsg, err := json.Marshal(updateMsg)
-						if err != nil {
-							log.Printf("Error marshaling tabUpdate message: %v", err)
-							continue
-						}
-						c.doc.broadcast <- BroadcastMessage{Sender: nil, Message: jsonMsg}
-
-						// Save state after renaming tab
-						if err := c.doc.saveState(); err != nil {
-							log.Printf("Error saving document state: %v", err)
+			}
+		case "requestState":
+			// Ignore: only sent by server
+		case "fullState":
+			// Only accept if there are clients waiting for state
+			doc := c.doc
+			doc.mu.Lock()
+			waiting := doc.waitingForState
+			doc.waitingForState = nil
+			doc.mu.Unlock()
+			if len(waiting) > 0 {
+				// Change type to 'init' before sending
+				var state map[string]interface{}
+				if err := json.Unmarshal(message, &state); err == nil {
+					state["type"] = "init"
+					initMsg, _ := json.Marshal(state)
+					for _, waitingClient := range waiting {
+						if waitingClient.conn != nil {
+							waitingClient.conn.WriteMessage(websocket.TextMessage, initMsg)
 						}
 					}
 				}
-			case "requestState":
-				// Ignore: only sent by server
-			case "fullState":
-				// Only accept if there are clients waiting for state
-				doc := c.doc
-				doc.mu.Lock()
-				waiting := doc.waitingForState
-				doc.waitingForState = nil
-				doc.mu.Unlock()
-				if len(waiting) > 0 {
-					// Change type to 'init' before sending
-					var state map[string]interface{}
-					if err := json.Unmarshal(message, &state); err == nil {
-						state["type"] = "init"
-						initMsg, _ := json.Marshal(state)
-						for _, waitingClient := range waiting {
-							if waitingClient.conn != nil {
-								waitingClient.conn.WriteMessage(websocket.TextMessage, initMsg)
-							}
+			}
+		case "tabNotesUpdate":
+			if tabId, ok := msg["tabId"].(string); ok {
+				if notes, ok := msg["notes"].(string); ok {
+					c.doc.mu.Lock()
+					for i, tab := range c.doc.Tabs {
+						if tab.ID == tabId {
+							c.doc.Tabs[i].Notes = notes
+							break
 						}
 					}
-				}
-			case "tabNotesUpdate":
-				if tabId, ok := jsonMsg["tabId"].(string); ok {
-					if notes, ok := jsonMsg["notes"].(string); ok {
-						c.doc.mu.Lock()
-						for i, tab := range c.doc.Tabs {
-							if tab.ID == tabId {
-								c.doc.Tabs[i].Notes = notes
-								break
-							}
-						}
-						c.doc.mu.Unlock()
+					c.doc.mu.Unlock()
 
-						// Broadcast to all clients
-						broadcastMsg := map[string]interface{}{
-							"type":  "tabNotesUpdate",
-							"tabId": tabId,
-							"notes": notes,
-						}
-						jsonMsg, err := json.Marshal(broadcastMsg)
-						if err == nil {
-							c.doc.broadcast <- BroadcastMessage{Sender: c, Message: jsonMsg}
-						}
+					// Broadcast to all clients
+					broadcastMsg := map[string]interface{}{
+						"type":  "tabNotesUpdate",
+						"tabId": tabId,
+						"notes": notes,
+					}
+					jsonMsg, err := json.Marshal(broadcastMsg)
+					if err == nil {
+						c.doc.broadcast <- BroadcastMessage{Sender: c, Message: jsonMsg}
+					}
 
-						// Save state after update
-						if err := c.doc.saveState(); err != nil {
-							log.Printf("Error saving document state: %v", err)
-						}
+					// Save state after update
+					if err := c.doc.saveState(); err != nil {
+						logger.Error("Error saving document state", "error", err)
 					}
 				}
 			}
@@ -703,26 +719,18 @@ func (c *Client) writePump() {
 		c.conn.Close()
 	}()
 	for message := range c.send {
-		w, err := c.conn.NextWriter(websocket.TextMessage)
-		if err != nil {
-			log.Printf("WebSocket write error for doc %s: %v", c.docID, err)
+		if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
+			logger.Error("Failed to send message to client", "error", err)
 			return
 		}
-		if _, err := w.Write(message); err != nil {
-			log.Printf("WebSocket write error for doc %s: %v", c.docID, err)
-			return
-		}
-		if err := w.Close(); err != nil {
-			log.Printf("WebSocket write error for doc %s: %v", c.docID, err)
-			return
-		}
+		logger.Debug("Message sent to client")
 	}
 }
 
 func (doc *Document) broadcastMessages() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("Recovered from panic in broadcastMessages: %v", r)
+			logger.Error("Recovered from panic in broadcastMessages", "error", r)
 		}
 	}()
 	for {
@@ -741,7 +749,7 @@ func (doc *Document) broadcastMessages() {
 			}
 			doc.mu.RUnlock()
 			client.conn.WriteJSON(initialState)
-			log.Printf("Client registered in doc %s, total clients: %d", doc.ID, len(doc.clients))
+			logger.Debug("Client registered", "doc_id", doc.ID, "total_clients", len(doc.clients))
 		case client := <-doc.unregister:
 			doc.mu.Lock()
 			if client.uuid != "" {
@@ -762,7 +770,7 @@ func (doc *Document) broadcastMessages() {
 				}
 			}
 			doc.mu.Unlock()
-			log.Printf("Client unregistered in doc %s, total clients: %d", doc.ID, len(doc.clients))
+			logger.Debug("Client unregistered", "doc_id", doc.ID, "total_clients", len(doc.clients))
 		case bmsg := <-doc.broadcast:
 			var msgType string
 			var msgObj map[string]interface{}
@@ -775,20 +783,20 @@ func (doc *Document) broadcastMessages() {
 			// Save state after certain message types
 			if msgType == "update" || msgType == "language" {
 				if err := doc.saveState(); err != nil {
-					log.Printf("Error saving document state: %v", err)
+					logger.Error("Error saving document state", "error", err)
 				}
 			}
 
 			for client := range doc.clients {
 				if client == bmsg.Sender && msgType == "update" {
-					log.Printf("Skipping sender for update message")
+					logger.Debug("Skipping sender for update message")
 					continue
 				}
 				select {
 				case client.send <- bmsg.Message:
-					log.Printf("Message sent to client")
+					logger.Debug("Message sent to client")
 				default:
-					log.Printf("Client buffer full or dead, removing client")
+					logger.Error("Client buffer full or dead, removing client")
 					delete(doc.clients, client)
 					close(client.send)
 				}
@@ -852,8 +860,9 @@ func (doc *Document) saveState() error {
 // getNextAvailableColor returns a random available color from the palette that isn't used in this document
 // Note: Caller must hold doc.mu.Lock()
 func (doc *Document) getNextAvailableColor() string {
-	log.Printf("getNextAvailableColor: current used colors: %v", doc.usedColors)
-	log.Printf("getNextAvailableColor: current users: %v", doc.Users)
+	logger.Debug("Getting next available color",
+		"used_colors", doc.usedColors,
+		"users", doc.Users)
 
 	// First, check which colors are actually in use by active users
 	activeColors := make(map[string]bool)
@@ -862,7 +871,7 @@ func (doc *Document) getNextAvailableColor() string {
 			activeColors[client.color] = true
 		}
 	}
-	log.Printf("getNextAvailableColor: active colors: %v", activeColors)
+	logger.Debug("Active colors", "colors", activeColors)
 
 	// Create a slice of available colors
 	var availableColors []string
@@ -876,16 +885,16 @@ func (doc *Document) getNextAvailableColor() string {
 	if len(availableColors) > 0 {
 		selectedColor := availableColors[rand.Intn(len(availableColors))]
 		doc.usedColors[selectedColor] = true
-		log.Printf("getNextAvailableColor: randomly selected color %v", selectedColor)
+		logger.Debug("Selected new color", "color", selectedColor)
 		return selectedColor
 	}
 
 	// If all colors are used, randomly select from all colors
 	// This is a fallback that should rarely happen
-	log.Printf("getNextAvailableColor: all colors used, randomly selecting from all colors")
+	logger.Debug("All colors used, selecting from all colors")
 	selectedColor := colorPalette[rand.Intn(len(colorPalette))]
 	doc.usedColors[selectedColor] = true
-	log.Printf("getNextAvailableColor: randomly selected reused color %v", selectedColor)
+	logger.Debug("Selected reused color", "color", selectedColor)
 	return selectedColor
 }
 
