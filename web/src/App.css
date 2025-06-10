@@ -65,7 +65,7 @@ html, body {
 }
 
 .connection-status.disconnected {
-  background: #e53935;
+  background: #8b0000;
   color: #fff;
 }
 
@@ -87,8 +87,8 @@ html, body {
 }
 
 .connection-status.disconnected .status-dot {
-  background-color: #e57373;
-  box-shadow: 0 0 4px #e57373;
+  background-color: #ff6b6b;
+  box-shadow: 0 0 4px #ff6b6b;
 }
 
 @keyframes spin-slow {
@@ -98,6 +98,10 @@ html, body {
 
 .connection-status.reconnecting svg {
   animation: spin-slow 1.5s linear infinite;
+}
+
+.connection-status.disconnected svg {
+  animation: none;
 }
 
 main {
