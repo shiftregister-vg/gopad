@@ -869,20 +869,17 @@ function RoomEditor() {
                       <div className="notes-panel-header">
                         <div className="notes-header-group">
                           <span className="tab-notes-label">Notes</span>
-                          {!(tabs.find(t => t.id === activeTabId)?.notes) && editingNotes !== activeTabId && (
-                            <button className="add-notes-icon" onClick={() => handleNotesEdit(activeTabId)} title="Add Notes">
-                              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M15.232 2.232a2.5 2.5 0 0 1 3.536 3.536l-11.25 11.25a2 2 0 0 1-.707.464l-4 1.333a.5.5 0 0 1-.632-.632l1.333-4a2 2 0 0 1 .464-.707l11.25-11.25zm2.122 1.414a1.5 1.5 0 0 0-2.122 0l-1.086 1.086 2.122 2.122 1.086-1.086a1.5 1.5 0 0 0 0-2.122zM3.5 15.793l10.25-10.25 2.122 2.122-10.25 10.25-2.122-2.122zm-.707 1.414l1.415 1.415-2.122.707.707-2.122z" fill="currentColor"/>
-                              </svg>
-                            </button>
-                          )}
                         </div>
                         <div className="notes-header-actions">
-                          {!!tabs.find(t => t.id === activeTabId)?.notes && (
-                            <button onClick={() => handleNotesEdit(activeTabId)} className="edit-notes-link">
-                              Edit
-                            </button>
-                          )}
+                          <button
+                            onClick={() => handleNotesEdit(activeTabId)}
+                            className="add-notes-icon"
+                            title={tabs.find(t => t.id === activeTabId)?.notes ? "Edit Notes" : "Add Notes"}
+                          >
+                            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M15.232 2.232a2.5 2.5 0 0 1 3.536 3.536l-11.25 11.25a2 2 0 0 1-.707.464l-4 1.333a.5.5 0 0 1-.632-.632l1.333-4a2 2 0 0 1 .464-.707l11.25-11.25zm2.122 1.414a1.5 1.5 0 0 0-2.122 0l-1.086 1.086 2.122 2.122 1.086-1.086a1.5 1.5 0 0 0 0-2.122zM3.5 15.793l10.25-10.25 2.122 2.122-10.25 10.25-2.122-2.122zm-.707 1.414l1.415 1.415-2.122.707.707-2.122z" fill="currentColor"/>
+                            </svg>
+                          </button>
                         </div>
                       </div>
                       <div className="tab-notes">
