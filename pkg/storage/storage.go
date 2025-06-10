@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -28,26 +29,72 @@ type Tab struct {
 	Notes   string `json:"notes"` // Added for storing markdown notes
 }
 
+// redisClient is an interface that abstracts Redis operations
+type redisClient interface {
+	Ping(ctx context.Context) *redis.StatusCmd
+	HGet(ctx context.Context, key, field string) *redis.StringCmd
+	HSet(ctx context.Context, key string, values ...interface{}) *redis.IntCmd
+	Del(ctx context.Context, keys ...string) *redis.IntCmd
+	Expire(ctx context.Context, key string, expiration time.Duration) *redis.BoolCmd
+	Publish(ctx context.Context, channel string, message interface{}) *redis.IntCmd
+	Subscribe(ctx context.Context, channels ...string) *redis.PubSub
+	Pipeline() redis.Pipeliner
+	Close() error
+}
+
 // Storage handles persistent document state using Redis
 type Storage struct {
-	client *redis.Client
+	client redisClient
 	mu     sync.RWMutex
 	ctx    context.Context
 }
 
 // New creates a new storage instance
 func New(redisURL string) (*Storage, error) {
-	opts, err := redis.ParseURL(redisURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse Redis URL: %w", err)
-	}
-
-	client := redis.NewClient(opts)
 	ctx := context.Background()
+	var client redisClient
 
-	// Test connection
-	if err := client.Ping(ctx).Err(); err != nil {
-		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
+	// Check if cluster mode is enabled
+	if os.Getenv("REDIS_CLUSTER_MODE") == "true" {
+		// Parse URL for cluster mode
+		opts, err := redis.ParseURL(redisURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse Redis URL: %w", err)
+		}
+
+		// Create cluster client
+		clusterClient := redis.NewClusterClient(&redis.ClusterOptions{
+			Addrs:    []string{opts.Addr},
+			Username: opts.Username,
+			Password: opts.Password,
+			// Enable cluster mode
+			ClusterSlots: func(ctx context.Context) ([]redis.ClusterSlot, error) {
+				return nil, nil // Let the client discover slots automatically
+			},
+		})
+
+		// Test connection
+		if err := clusterClient.Ping(ctx).Err(); err != nil {
+			return nil, fmt.Errorf("failed to connect to Redis cluster: %w", err)
+		}
+
+		client = clusterClient
+	} else {
+		// Parse URL for single instance mode
+		opts, err := redis.ParseURL(redisURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse Redis URL: %w", err)
+		}
+
+		// Create single instance client
+		singleClient := redis.NewClient(opts)
+
+		// Test connection
+		if err := singleClient.Ping(ctx).Err(); err != nil {
+			return nil, fmt.Errorf("failed to connect to Redis: %w", err)
+		}
+
+		client = singleClient
 	}
 
 	return &Storage{

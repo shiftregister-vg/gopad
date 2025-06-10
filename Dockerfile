@@ -29,6 +29,7 @@ COPY --from=backend-builder /app/gopad .
 
 # Set environment variables with defaults
 ENV REDIS_URL="redis://localhost:6379/0" \
+    REDIS_CLUSTER_MODE="false" \
     PORT="8080" \
     GO_ENV="production"
 
