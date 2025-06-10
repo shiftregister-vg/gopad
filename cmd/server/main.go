@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
@@ -191,7 +192,11 @@ func main() {
 	}
 
 	// Start the server
-	log.Fatal(r.Run(":3030"))
+	port := "3030"
+	if os.Getenv("PORT") != "" {
+		port = os.Getenv("PORT")
+	}
+	log.Fatal(r.Run(fmt.Sprintf(":%s", port)))
 }
 
 // ensureMinimumTabs ensures there is always at least one tab in the document
