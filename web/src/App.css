@@ -211,7 +211,7 @@ textarea:disabled {
   padding: 10px;
   margin-bottom: 20px;
   border: 1px solid #444;
-  border-radius: 4px;
+  border-radius: 0;
   font-size: 16px;
   background: #181a1b;
   color: #e0e0e0;
@@ -223,7 +223,7 @@ textarea:disabled {
   background-color: #61dafb;
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 0;
   font-size: 16px;
   cursor: pointer;
   transition: background-color 0.2s;
@@ -248,7 +248,7 @@ textarea:disabled {
 
 .language-select select {
   padding: 6px 12px;
-  border-radius: 4px;
+  border-radius: 0;
   border: 1px solid #444;
   background: #23272e;
   color: #fff;
@@ -285,7 +285,7 @@ textarea:disabled {
   margin-left: 8px;
   color: #b2ffb2;
   background: #23272e;
-  border-radius: 4px;
+  border-radius: 0;
   padding: 2px 8px;
   font-size: 0.95em;
   box-shadow: 0 1px 4px rgba(0,0,0,0.12);
@@ -386,7 +386,7 @@ textarea:disabled {
   padding: 0 4px;
   font-size: 14px;
   line-height: 1;
-  border-radius: 3px;
+  border-radius: 0;
   transition: all 0.2s;
   visibility: hidden;
 }
@@ -429,7 +429,7 @@ textarea:disabled {
   border: 1px solid #2e2e2e;
   color: #e0e0e0;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: 0;
   transition: all 0.2s;
 }
 
@@ -447,7 +447,7 @@ textarea:disabled {
   border: 1px solid #444;
   color: #e0e0e0;
   padding: 4px 12px;
-  border-radius: 4px;
+  border-radius: 0;
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -497,7 +497,7 @@ textarea:disabled {
   padding: 18px 0 10px 0;
   background: #23272e;
   border: 1.5px solid #444;
-  border-radius: 6px;
+  border-radius: 0;
   box-shadow: 0 2px 12px 0 rgba(0,0,0,0.12);
   margin-bottom: 18px;
 }
@@ -511,7 +511,7 @@ textarea:disabled {
   background: #181a1b;
   color: #e0e0e0;
   border: 1.5px solid #444;
-  border-radius: 4px;
+  border-radius: 0;
   padding: 10px 12px;
   resize: vertical;
   overflow-y: auto;
@@ -527,7 +527,7 @@ textarea:disabled {
 .save-button, .cancel-button {
   padding: 7px 22px;
   font-size: 1rem;
-  border-radius: 4px;
+  border-radius: 0;
   border: 1px solid #444;
   background: #23272e;
   color: #e0e0e0;
@@ -570,14 +570,14 @@ textarea:disabled {
 .notes-content code {
   background: #23272e;
   padding: 2px 4px;
-  border-radius: 3px;
+  border-radius: 0;
   font-family: 'Hack', monospace;
 }
 
 .notes-content pre {
   background: #23272e;
   padding: 8px;
-  border-radius: 4px;
+  border-radius: 0;
   overflow-x: auto;
   font-family: 'Hack', monospace;
 }
@@ -664,7 +664,7 @@ textarea:disabled {
 
 .notes-modal {
   background: #23272e;
-  border-radius: 10px;
+  border-radius: 0;
   box-shadow: 0 8px 32px 0 rgba(0,0,0,0.25);
   padding: 28px 28px 20px 28px;
   max-width: 620px;
@@ -692,7 +692,7 @@ textarea:disabled {
   background: #181a1b;
   color: #e0e0e0;
   border: 1.5px solid #444;
-  border-radius: 4px;
+  border-radius: 0;
   padding: 14px 16px;
   margin-bottom: 22px;
   resize: vertical;
