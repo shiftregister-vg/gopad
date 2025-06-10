@@ -306,7 +306,6 @@ textarea:disabled {
 
 .editor-header {
   background: #181a1b;
-  border-bottom: 1px solid #333;
   padding: 8px 8px 0 8px;
   display: flex;
   flex-direction: column;
@@ -316,7 +315,7 @@ textarea:disabled {
 
 .tab-bar {
   display: flex;
-  gap: 2px;
+  gap: 0;
   overflow-x: auto;
   padding-bottom: 2px;
   scrollbar-width: thin;
@@ -333,18 +332,18 @@ textarea:disabled {
 
 .tab-bar::-webkit-scrollbar-thumb {
   background-color: #444;
-  border-radius: 3px;
+  border-radius: 0;
 }
 
 .tab {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0;
   padding: 6px 12px;
   background: #181a1b;
-  border: 1px solid #23272e;
-  border-bottom: none;
-  border-radius: 4px 4px 0 0;
+  border: none;
+  margin-bottom: -2px;
+  border-radius: 0;
   cursor: pointer;
   user-select: none;
   min-width: 120px;
@@ -358,10 +357,8 @@ textarea:disabled {
 }
 
 .tab.active {
-  background: #1e1e1e;
+  background: #232323;
   color: #e0e0e0;
-  border-bottom: none;
-  margin-bottom: -1px;
   z-index: 2;
 }
 
@@ -713,16 +710,6 @@ textarea:disabled {
   flex-direction: column;
 }
 
-.center-panel {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  height: 100%;
-  position: relative;
-  padding-top: 8px;
-}
-
 .notes-panel {
   width: 340px;
   background: #181a1b;
@@ -853,7 +840,9 @@ textarea:disabled {
   flex-direction: column;
   min-width: 0;
   height: 100%;
-  background: #1e1e1e;
+  position: relative;
+  padding-top: 8px;
+  background: #232323;
 }
 
 .add-notes-icon {
@@ -918,4 +907,8 @@ button {
 select {
   background: #2d2d2d;
   border: 1px solid #2e2e2e;
+}
+
+.cm-editor, .cm-scroller {
+  background: #232323 !important;
 } 

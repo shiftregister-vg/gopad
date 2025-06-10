@@ -502,7 +502,43 @@ function RoomEditor() {
     }
   };
 
-  const handleEditorDidMount: OnMount = (editor) => {
+  const handleEditorDidMount: OnMount = (editor, monaco) => {
+    monaco.editor.defineTheme('custom-dark-bg', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.background': '#232323',
+        'editor.foreground': '#e0e0e0',
+        'editorLineNumber.foreground': '#888',
+        'editorGutter.background': '#232323',
+        'editorCursor.foreground': '#61dafb',
+        'editor.selectionBackground': '#44475a88',
+        'editor.lineHighlightBackground': '#282828',
+        'editorWhitespace.foreground': '#444',
+        'editorIndentGuide.background': '#333',
+        'editorIndentGuide.activeBackground': '#555',
+        'editor.selectionHighlightBackground': '#44475a44',
+        'editorBracketMatch.background': '#44475a44',
+        'editorBracketMatch.border': '#61dafb',
+        'editorWidget.background': '#232323',
+        'editorWidget.border': '#444',
+        'editorSuggestWidget.background': '#232323',
+        'editorSuggestWidget.border': '#444',
+        'editorSuggestWidget.foreground': '#e0e0e0',
+        'editorSuggestWidget.selectedBackground': '#363636',
+        'editorHoverWidget.background': '#232323',
+        'editorHoverWidget.border': '#444',
+        'editor.lineHighlightBorder': '#232323',
+        'editorGroup.border': '#232323',
+        'editorGroupHeader.tabsBackground': '#232323',
+        'tab.activeBackground': '#232323',
+        'tab.inactiveBackground': '#181a1b',
+        'tab.border': '#232323',
+      },
+    });
+    monaco.editor.setTheme('custom-dark-bg');
+
     editorRef.current = editor;
 
     // Add cursor position change listener
@@ -999,7 +1035,7 @@ function RoomEditor() {
                     value={tabs.find(tab => tab.id === activeTabId)?.content || ''}
                     onChange={handleEditorChange}
                     onMount={handleEditorDidMount}
-                    theme="vs-dark"
+                    theme="custom-dark-bg"
                     key={activeTabId}
                     options={{
                       minimap: { enabled: false },
