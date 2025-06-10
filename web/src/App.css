@@ -341,7 +341,7 @@ textarea:disabled {
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background: #2d2d2d;
+  background: #1e1e1e;
   border: 1px solid #2e2e2e;
   border-bottom: none;
   border-radius: 4px 4px 0 0;
@@ -354,11 +354,11 @@ textarea:disabled {
 }
 
 .tab:hover {
-  background: #363636;
+  background: #2d2d2d;
 }
 
 .tab.active {
-  background: #1e1e1e;
+  background: #363636;
   border-bottom: 1px solid #23272e;
   margin-bottom: -1px;
 }
