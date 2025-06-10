@@ -764,11 +764,128 @@ function RoomEditor() {
       if (activeTab) {
         const currentContent = editorRef.current.getValue();
         if (currentContent !== activeTab.content) {
-          editorRef.current.setValue(activeTab.content);
+          // Use Monaco's delta updates instead of setValue
+          const model = editorRef.current.getModel();
+          if (model) {
+            const oldValue = currentContent;
+            const newValue = activeTab.content;
+            
+            // Find the first position where the content differs
+            let changeStart = 0;
+            while (changeStart < oldValue.length && changeStart < newValue.length && oldValue[changeStart] === newValue[changeStart]) {
+              changeStart++;
+            }
+
+            // Find the last position where the content differs
+            let oldEnd = oldValue.length - 1;
+            let newEnd = newValue.length - 1;
+            while (oldEnd >= changeStart && newEnd >= changeStart && oldValue[oldEnd] === newValue[oldEnd]) {
+              oldEnd--;
+              newEnd--;
+            }
+
+            // Calculate the change length
+            const changeLength = newEnd - changeStart + 1;
+            const changeEnd = oldEnd + 1;
+
+            // Apply the change using Monaco's delta updates
+            const startPosition = model.getPositionAt(changeStart);
+            const endPosition = model.getPositionAt(changeEnd);
+            if (startPosition && endPosition) {
+              const range = new monaco.Range(
+                startPosition.lineNumber,
+                startPosition.column,
+                endPosition.lineNumber,
+                endPosition.column
+              );
+              const text = newValue.substring(changeStart, changeStart + changeLength);
+              model.pushEditOperations(
+                [],
+                [{ range, text }],
+                () => null
+              );
+            }
+          }
         }
       }
     }
   }, [activeTabId, tabs]);
+
+  // Add effect to handle WebSocket updates
+  useEffect(() => {
+    if (!wsRef.current) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data) as WebSocketMessage;
+        if (typeof data === 'object' && data !== null && 'type' in data) {
+          const msgType = (data as { type: string }).type;
+          switch (msgType) {
+            case 'update':
+              const updateMsg = data as UpdateMessage;
+              if (editorRef.current && updateMsg.tabId === activeTabId) {
+                const model = editorRef.current.getModel();
+                if (model) {
+                  const currentContent = model.getValue();
+                  const newContent = updateMsg.content;
+                  
+                  // Find the first position where the content differs
+                  let changeStart = 0;
+                  while (changeStart < currentContent.length && changeStart < newContent.length && currentContent[changeStart] === newContent[changeStart]) {
+                    changeStart++;
+                  }
+
+                  // Find the last position where the content differs
+                  let oldEnd = currentContent.length - 1;
+                  let newEnd = newContent.length - 1;
+                  while (oldEnd >= changeStart && newEnd >= changeStart && currentContent[oldEnd] === newContent[oldEnd]) {
+                    oldEnd--;
+                    newEnd--;
+                  }
+
+                  // Calculate the change length
+                  const changeLength = newEnd - changeStart + 1;
+                  const changeEnd = oldEnd + 1;
+
+                  // Apply the change using Monaco's delta updates
+                  const startPosition = model.getPositionAt(changeStart);
+                  const endPosition = model.getPositionAt(changeEnd);
+                  if (startPosition && endPosition) {
+                    const range = new monaco.Range(
+                      startPosition.lineNumber,
+                      startPosition.column,
+                      endPosition.lineNumber,
+                      endPosition.column
+                    );
+                    const text = newContent.substring(changeStart, changeStart + changeLength);
+                    model.pushEditOperations(
+                      [],
+                      [{ range, text }],
+                      () => null
+                    );
+                  }
+                }
+              }
+              // Update tabs state without triggering editor update
+              setTabs(prevTabs => prevTabs.map(tab =>
+                tab.id === updateMsg.tabId ? { ...tab, content: updateMsg.content } : tab
+              ));
+              break;
+            // ... handle other message types ...
+          }
+        }
+      } catch (e) {
+        // Optionally handle error
+      }
+    };
+
+    wsRef.current.addEventListener('message', handleMessage);
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.removeEventListener('message', handleMessage);
+      }
+    };
+  }, [activeTabId]);
 
   useEffect(() => {
     setTimeout(() => {
