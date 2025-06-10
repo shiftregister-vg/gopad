@@ -13,7 +13,7 @@ GoPad is a collaborative text editor built with Go and React. It allows multiple
 
 ## Prerequisites
 
-- [devbox](https://www.jetpack.io/devbox) for development environment management
+- [devbox](https://www.jetify.com/devbox) for development environment management
 - Docker (optional, for production deployment)
 
 ## Installation
@@ -27,10 +27,10 @@ cd gopad
 2. Install devbox:
 ```bash
 # On macOS:
-brew install jetpack-io/devbox/devbox
+curl -fsSL https://get.jetify.com/devbox | bash
 
 # On Linux:
-curl -fsSL https://get.jetpack.io/devbox | bash
+curl -fsSL https://get.jetify.com/devbox | bash
 ```
 
 3. Start the development environment:
@@ -59,22 +59,7 @@ The project uses devbox to manage development dependencies and services. When yo
 Available devbox scripts:
 ```bash
 # Start both frontend and backend in development mode
-devbox run dev
-
-# Start only the frontend
-devbox run start:frontend
-
-# Start only the backend
-devbox run start:backend
-
-# Build the frontend
-devbox run build
-
-# Run tests
-devbox run test
-
-# Clean build artifacts
-devbox run clean
+devbox services up
 ```
 
 ## Configuration
