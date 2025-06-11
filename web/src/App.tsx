@@ -1020,7 +1020,6 @@ function RoomEditor() {
                   <label htmlFor="language">Language:</label>
                   <select
                     id="language"
-                    value={language}
                     onChange={handleLanguageChange}
                     defaultValue="plaintext"
                   >
@@ -1042,7 +1041,7 @@ function RoomEditor() {
                     <option value="objective-c">Objective-C</option>
                     <option value="perl">Perl</option>
                     <option value="php">PHP</option>
-                    <option value="plaintext" selected>Plain Text</option>
+                    <option value="plaintext">Plain Text</option>
                     <option value="powershell">PowerShell</option>
                     <option value="python">Python</option>
                     <option value="ruby">Ruby</option>
