@@ -309,6 +309,8 @@ function RoomEditor() {
   const [activeTabId, setActiveTabId] = useState('1');
   const [editingNotes, setEditingNotes] = useState<string | null>(null);
   const [notesContent, setNotesContent] = useState('');
+  const [notesPanelWidth, setNotesPanelWidth] = useState(300); // Default width in pixels
+  const [isResizing, setIsResizing] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const decorationsRef = useRef<string[]>([]);
@@ -995,6 +997,44 @@ function RoomEditor() {
     );
   }, [remoteCursors, users, currentUserUuid]);
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsResizing(true);
+    e.preventDefault();
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isResizing) return;
+    
+    const container = centerPanelRef.current?.parentElement;
+    if (!container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const newWidth = containerRect.right - e.clientX;
+    
+    // Set minimum and maximum widths
+    const minWidth = 200;
+    const maxWidth = containerRect.width * 0.8;
+    
+    if (newWidth >= minWidth && newWidth <= maxWidth) {
+      setNotesPanelWidth(newWidth);
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsResizing(false);
+  };
+
+  useEffect(() => {
+    if (isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
   return (
     <div className="App">
       {showNamePrompt ? (
@@ -1182,37 +1222,44 @@ function RoomEditor() {
                     )}
                   </button>
                 </div>
-                <div className={`notes-panel${notesPanelOpen ? ' open' : ' closed'}`}> 
-                  {notesPanelOpen && (
-                    <div className="notes-panel-content">
-                      <div className="notes-panel-header">
-                        <div className="notes-header-group">
-                          <span className="tab-notes-label">Notes</span>
+                {notesPanelOpen && (
+                  <>
+                    <div 
+                      className="resize-handle"
+                      onMouseDown={handleMouseDown}
+                      style={{ cursor: 'col-resize' }}
+                    />
+                    <div className="notes-panel" style={{ width: `${notesPanelWidth}px` }}> 
+                      <div className="notes-panel-content">
+                        <div className="notes-panel-header">
+                          <div className="notes-header-group">
+                            <span className="tab-notes-label">Notes</span>
+                          </div>
+                          <div className="notes-header-actions">
+                            <button
+                              onClick={() => handleNotesEdit(activeTabId)}
+                              className="add-notes-icon"
+                              title={tabs.find(t => t.id === activeTabId)?.notes ? "Edit Notes" : "Add Notes"}
+                            >
+                              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M15.232 2.232a2.5 2.5 0 0 1 3.536 3.536l-11.25 11.25a2 2 0 0 1-.707.464l-4 1.333a.5.5 0 0 1-.632-.632l1.333-4a2 2 0 0 1 .464-.707l11.25-11.25zm2.122 1.414a1.5 1.5 0 0 0-2.122 0l-1.086 1.086 2.122 2.122 1.086-1.086a1.5 1.5 0 0 0 0-2.122zM3.5 15.793l10.25-10.25 2.122 2.122-10.25 10.25-2.122-2.122zm-.707 1.414l1.415 1.415-2.122.707.707-2.122z" fill="currentColor"/>
+                              </svg>
+                            </button>
+                          </div>
                         </div>
-                        <div className="notes-header-actions">
-                          <button
-                            onClick={() => handleNotesEdit(activeTabId)}
-                            className="add-notes-icon"
-                            title={tabs.find(t => t.id === activeTabId)?.notes ? "Edit Notes" : "Add Notes"}
-                          >
-                            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <path d="M15.232 2.232a2.5 2.5 0 0 1 3.536 3.536l-11.25 11.25a2 2 0 0 1-.707.464l-4 1.333a.5.5 0 0 1-.632-.632l1.333-4a2 2 0 0 1 .464-.707l11.25-11.25zm2.122 1.414a1.5 1.5 0 0 0-2.122 0l-1.086 1.086 2.122 2.122 1.086-1.086a1.5 1.5 0 0 0 0-2.122zM3.5 15.793l10.25-10.25 2.122 2.122-10.25 10.25-2.122-2.122zm-.707 1.414l1.415 1.415-2.122.707.707-2.122z" fill="currentColor"/>
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                      <div className="tab-notes">
-                        <div className="notes-display">
-                          <div className="notes-content">
-                            <ReactMarkdown components={markdownComponents}>
-                              {tabs.find(t => t.id === activeTabId)?.notes || ''}
-                            </ReactMarkdown>
+                        <div className="tab-notes">
+                          <div className="notes-display">
+                            <div className="notes-content">
+                              <ReactMarkdown components={markdownComponents}>
+                                {tabs.find(t => t.id === activeTabId)?.notes || ''}
+                              </ReactMarkdown>
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
-                  )}
-                </div>
+                  </>
+                )}
               </div>
             </div>
           </main>

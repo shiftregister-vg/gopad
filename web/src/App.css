@@ -751,7 +751,7 @@ textarea:disabled {
   width: 340px;
   background: #181a1b;
   height: 100%;
-  transition: width 0.2s;
+  transition: width 0.1s ease-out;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -768,12 +768,9 @@ textarea:disabled {
 
 .editor-notes-row {
   display: flex;
-  flex-direction: row;
-  flex: 1 1 auto;
-  min-height: 0;
-  height: 100%;
+  flex: 1;
   position: relative;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .notes-panel-toggle {
@@ -836,12 +833,11 @@ textarea:disabled {
 }
 
 .notes-panel-content {
-  padding: 4px 14px 10px 18px;
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 0;
+  height: 100%;
   overflow: hidden;
+  padding: 0 12px;
 }
 
 .main-content {
@@ -853,14 +849,9 @@ textarea:disabled {
 }
 
 .center-panel {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
+  flex: 1;
   min-width: 0;
-  height: 100%;
   position: relative;
-  padding-top: 8px;
-  background: #232323;
 }
 
 .add-notes-icon {
@@ -929,4 +920,18 @@ select {
 
 .cm-editor, .cm-scroller {
   background: #232323 !important;
+}
+
+.resize-handle {
+  width: 2px;
+  background: #444;
+  cursor: col-resize;
+  transition: background-color 0.2s;
+  position: relative;
+  z-index: 10;
+}
+
+.resize-handle:hover,
+.resize-handle:active {
+  background: #444;
 } 
